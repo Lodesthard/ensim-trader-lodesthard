@@ -584,7 +584,16 @@ const tsOfTick = t => D && tickIdx[t] != null ? fmtTs(D.timestamps[tickIdx[t]]) 
 const charts = {};
 function chart(id, cfg) {
   if (!HAS_CHART) { const c = $(id); if (c) c.parentElement.innerHTML = '<div class="empty">Graphique indisponible (bibliothèque Chart.js non chargée — connexion requise).</div>'; return null; }
-  if (charts[id]) charts[id].destroy();
+  if (charts[id]) {
+    /* Re-using a canvas after destroy() leaves it blank on high-DPI screens
+       (Windows display scale 125-150 %): swap in a fresh canvas instead. */
+    charts[id].destroy();
+    const old = $(id), fresh = document.createElement("canvas");
+    ["id", "role", "aria-label"].forEach(a => old.hasAttribute(a) && fresh.setAttribute(a, old.getAttribute(a)));
+    old.replaceWith(fresh);
+    /* redraw at once on a toggle: an entry animation reads as "the curve vanished" */
+    cfg.options = { ...(cfg.options || {}), animation: false };
+  }
   charts[id] = new Chart($(id), cfg);
   return charts[id];
 }
