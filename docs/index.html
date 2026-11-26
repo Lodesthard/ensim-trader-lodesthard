@@ -6,8 +6,8 @@
   <p>Cette page confirme simplement que vos deux URL de flux renvoient de vraies données. Votre véritable tableau de bord (rendement vs. références, risque/volatilité, signal par produit, journal des décisions) est une chose distincte que vous construisez vous-même — voir ci-dessous.</p>
   <pre id="out">Chargement...</pre>
 <script>
-const MARKET_URL = "PASTE_YOUR_MARKET_URL_HERE";
-const HOLDINGS_URL = "PASTE_YOUR_HOLDINGS_URL_HERE";
+const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json";
+const HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json";
 Promise.all([fetch(MARKET_URL).then(r => r.json()), fetch(HOLDINGS_URL).then(r => r.json())])
   .then(([market, holdings]) => {
     document.getElementById('out').textContent =
