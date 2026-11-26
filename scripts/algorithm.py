@@ -3,6 +3,8 @@
 Pipeline for each product (see signals.py and endgame.py):
 1. raw index S in [-1, +1] = weighted mean of same-family methods;
 2. dead zone: |S| < DEAD_ZONE -> 0, else order = 2 x S, clipped (S = 0.5 -> 100 units);
+   with a success-based dead zone per side (adaptive.py): the dead zone for
+   buys (resp. sells) rises when recent buy (sell) signals were wrong;
 3. endgame rule in the last ticks before the end (1 Dec 2026, 15:00 Paris);
 4. stock/budget layer: never sell more than held, never spend below the reserve
    (cash is shared by A, B, C, executed in that order like the organizer does).
@@ -14,8 +16,9 @@ import time
 
 import requests
 
+import adaptive
 from endgame import END_UTC, estimate_remaining_ticks, endgame_order, forecast
-from signals import DEAD_ZONE, PRODUCT_CONFIG, product_index, to_order
+from signals import PRODUCT_CONFIG, product_index
 
 MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json"
 HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json"
@@ -66,11 +69,12 @@ def stock_guard(order, stock):
     return order
 
 
-def signal_reason(product, s, order):
+def signal_reason(product, s, order, dz):
     if not PRODUCT_CONFIG.get(product):
         return "aucune méthode retenue (hausse lente, vendre ferait rater la hausse) → conserver"
     if order == 0:
-        return f"S = {fr(s)} dans la zone morte (±{str(DEAD_ZONE).replace('.', ',')}) → conserver"
+        zone = f"−{dz['sell']:.2f} / +{dz['buy']:.2f}".replace(".", ",")
+        return f"S = {fr(s)} dans la zone morte ({zone}) → conserver"
     where = "en dessous" if s > 0 else "au-dessus"
     side = "achat" if order > 0 else "vente"
     return f"S = {fr(s)} : prix {where} de son niveau normal → {side} {abs(order) * 100:.0f} u."
@@ -89,8 +93,18 @@ def decide(market, holdings, now=None):
     for p in products:
         prices = [row[p] for row in history]
         s = compute_signal(prices, p)
-        order = to_order(s, DEAD_ZONE)
-        reason = signal_reason(p, s, order)
+        # recompute the recent signal history to judge its recent decisions
+        n = len(prices)
+        lookback = adaptive.WINDOW + max(adaptive.HORIZON.values()) + 2
+        s_hist = [0.0] * n
+        for t in range(max(0, n - lookback), n):
+            s_hist[t] = compute_signal(prices[: t + 1], p)
+        rates = adaptive.hit_rates(prices, s_hist, p)
+        dz = adaptive.dead_zones(rates)
+        order = adaptive.adaptive_order(s, dz)
+        reason = signal_reason(p, s, order, dz)
+        if PRODUCT_CONFIG.get(p):
+            reason += f" [{adaptive.describe(rates, dz)}]"
         fc = forecast(p, ticks, prices, remaining)
         order, phase, end_reason = endgame_order(p, ticks, prices, order, remaining, fc)
         if end_reason:
@@ -103,7 +117,7 @@ def decide(market, holdings, now=None):
             money -= 100 * guarded * prices[-1]  # cash left for the next product
         decision[p] = round(guarded, 3)
         details[p] = {"S": s, "order": decision[p], "phase": phase, "reason": reason,
-                      "price": prices[-1], "forecast": fc}
+                      "price": prices[-1], "forecast": fc, "dead_zone": dz, "hit_rates": rates}
     info = {"remaining_ticks": remaining, "median_gap_h": gap_h, "hours_left": hours_left,
             "end_utc": END_UTC.isoformat()}
     return decision, details, info

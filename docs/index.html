@@ -381,9 +381,9 @@ footer p { margin: 4px auto; max-width: 80ch; }
         </figure>
         <figure class="card" style="margin:0">
           <h3>Indice S et zone morte</h3>
-          <div class="legend"><span><i id="s-sw"></i>Indice S</span><span><i class="band"></i>Zone morte (pas de trade)</span></div>
+          <div class="legend"><span><i id="s-sw"></i>Indice S</span><span><i class="band"></i>Zone morte ajustée selon la réussite (pas de trade)</span></div>
           <div class="chart-box short"><canvas id="c-s" role="img" aria-label="Indice S du produit et zone morte"></canvas></div>
-          <figcaption class="helps"><b>Décision aidée :</b> acheter, vendre ou attendre. Hors de la bande, on envoie 2 × S, plafonné à ±1 (S = 0,5 → 100 unités). Dans la bande, on ne fait rien.</figcaption>
+          <figcaption class="helps"><b>Décision aidée :</b> acheter, vendre ou attendre. Hors de la bande, on envoie 2 × S, plafonné à ±1 (S = 0,5 → 100 unités). Dans la bande, on ne fait rien. La bande s'élargit côté achat (ou vente) quand les derniers signaux d'achat (ou de vente) se sont trompés.</figcaption>
         </figure>
       </div>
     </div>
@@ -484,6 +484,17 @@ footer p { margin: 4px auto; max-width: 80ch; }
       <div class="chart-box"><canvas id="c-eg" role="img" aria-label="Gain ajouté par la règle de fin de partie selon le tick de fin simulé"></canvas></div>
       <figcaption class="helps"><b>Réglages :</b> la 1re version bloquait tous les achats et perdait quand la fin tombait pendant une remontée. La version symétrique achète aussi près du creux quand le prix final prévu est plus haut. Avec les ordres ×2, une fenêtre de 12 ticks (un demi-cycle de C) n'ajoutait que +79 € ; 8 ticks donnent +184 € et restent positifs avec 4 ticks d'erreur.</figcaption>
     </figure>
+
+    <div class="card" style="margin-top:var(--gap)">
+      <h3>Ajustement selon la réussite</h3>
+      <p class="lede">Pour chaque produit et chaque sens, on regarde les signaux des 48 derniers ticks : un signal d'achat est réussi si le prix a monté un quart de cycle après (12 ticks pour A, 6 pour C), un signal de vente s'il a baissé. Seuil = 0,20 + 1,5 × (50 % − taux de réussite), borné entre 0,10 et 0,90. La taille des ordres ne change jamais.</p>
+      <div class="table-wrap"><table>
+        <caption class="sr-only">Gain de la 2e moitié selon le type de zone morte et l'état du signal</caption>
+        <thead><tr><th>Scénario (2e moitié)</th><th class="n">Zone morte fixe 0,20</th><th class="n">Zone morte selon la réussite</th></tr></thead>
+        <tbody id="m-adapt"></tbody>
+      </table></div>
+      <p class="helps"><b>Décision aidée :</b> faut-il continuer à faire confiance au signal ? L'ajustement coûte un peu quand le signal marche, mais coupe l'essentiel des pertes s'il cesse de marcher (changement de comportement du marché). Une 1re version bornée à 0,45 ne protégeait pas : les gros ordres perdants ont |S| &gt; 0,45.</p>
+    </div>
 
     <div class="card" style="margin-top:var(--gap)">
       <h3>Limites à garder en tête</h3>
@@ -801,6 +812,7 @@ function renderTabs() {
 }
 function renderProduct() {
   const p = curProd, c = D.current[p], ind = D.indicators[p], dz = D.dead_zone;
+  const zb = c.dead_zone ? c.dead_zone.buy : dz, zs = c.dead_zone ? c.dead_zone.sell : dz;
   const trades = D.sim.trades.filter(t => t.p === p);
   const buys = trades.filter(t => t.units > 0), sells = trades.filter(t => t.units < 0);
   const gain = products.length ? (D.backtest.sweep.find(r => Math.abs(r.dz - dz) < 1e-9) || {}) : {};
@@ -809,14 +821,15 @@ function renderProduct() {
   $("p-facts").innerHTML = `
     <dt>Famille</dt><dd>${FAMILY_FR[c.family]}</dd>
     <dt>Cycle</dt><dd>${per.is_cycle ? `${per.peak} ticks` : "aucun cycle net"}</dd>
+    <dt>Seuils</dt><dd>achat +${nf(2).format(zb)} · vente −${nf(2).format(zs)}${c.adaptive ? `<br><small style="color:var(--ink-3)">${esc(c.adaptive)}</small>` : ""}</dd>
     <dt>Ordre actuel</dt><dd class="${cls(c.order)}">${c.order === 0 ? "Conserver (dans la zone morte)" : `${c.order > 0 ? "▲ Acheter" : "▼ Vendre"} ${nf(0).format(Math.abs(c.order) * 100)} u. (${sgn(c.order, 2, "")})`}</dd>
     <dt>Trades simulés</dt><dd>${buys.length} achats · ${sells.length} ventes</dd>
     ${gain.H2 ? `<dt>Gain 2e moitié</dt><dd class="${cls(gain.H2.by[p])}">${arrow(gain.H2.by[p])} ${sgn(gain.H2.by[p])}</dd>` : ""}`;
   const pos = v => 50 + 50 * Math.max(-1, Math.min(1, v));
-  $("p-dz").style.left = pos(-dz) + "%"; $("p-dz").style.width = (pos(dz) - pos(-dz)) + "%";
+  $("p-dz").style.left = pos(-zs) + "%"; $("p-dz").style.width = (pos(zb) - pos(-zs)) + "%";
   $("p-needle").style.left = pos(c.S) + "%";
   $("p-gauge").setAttribute("aria-valuenow", c.S);
-  $("p-gauge").setAttribute("aria-label", `Indice S de ${p} : ${nf(2).format(c.S)}, zone morte ±${nf(2).format(dz)}`);
+  $("p-gauge").setAttribute("aria-label", `Indice S de ${p} : ${nf(2).format(c.S)}, zone morte de −${nf(2).format(zs)} à +${nf(2).format(zb)}`);
   $("p-methods").innerHTML = c.methods.length ? c.methods.map(m => `<tr class="${m.weight > 0 ? "retained" : ""}"><td>${esc(m.label)}${Object.keys(m.params).length ? `<br><small style="color:var(--ink-3);font-family:var(--mono)">${Object.entries(m.params).map(([k, v]) => `${k}=${v}`).join(" ")}</small>` : ""}</td><td class="n">${m.weight}</td><td class="n ${m.weight ? cls(m.value) : "flat"}">${m.weight ? sgn(m.value, 2, "") : "exclue"}</td></tr>`).join("")
     : `<tr><td colspan="3" style="color:var(--ink-3)">Aucune méthode : poids 0 partout, S = 0, on conserve le stock.</td></tr>`;
   $("p-why").textContent = c.why;
@@ -844,15 +857,18 @@ function renderProduct() {
 
   const Sx = xy(D.S[p]).filter(q => q.x > D.ticks[47]);
   const x0 = Sx.length ? Sx[0].x : 0, x1 = D.ticks[D.ticks.length - 1];
+  const zoneAt = [], zoneOf = {};
+  D.ticks.forEach((t, i) => { const z = D.dead_zones && D.dead_zones[p][i]; if (z && t >= x0) { const o = { x: t, sell: z[0], buy: z[1] }; zoneAt.push(o); zoneOf[t] = o; } });
+  if (!zoneAt.length) { zoneAt.push({ x: x0, sell: dz, buy: dz }, { x: x1, sell: dz, buy: dz }); }
   $("s-sw").style.background = COL[p];
   chart("c-s", { type: "line", data: { datasets: [
-    { label: "+zone", data: [{ x: x0, y: dz }, { x: x1, y: dz }], borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0, fill: "+1", backgroundColor: "rgba(242,234,216,.08)" },
-    { label: "−zone", data: [{ x: x0, y: -dz }, { x: x1, y: -dz }], borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+    { label: "+zone", data: zoneAt.map(z => ({ x: z.x, y: z.buy })), stepped: true, borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0, fill: "+1", backgroundColor: "rgba(242,234,216,.08)" },
+    { label: "−zone", data: zoneAt.map(z => ({ x: z.x, y: -z.sell })), stepped: true, borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
     { label: "Indice S", data: Sx, borderColor: COL[p], backgroundColor: COL[p], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
   ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
     scales: { x: linearX("Tick"), y: { ...valueY(v => nf(1).format(v)), min: -1, max: 1 } },
     plugins: { tooltip: { filter: it => it.dataset.label === "Indice S", callbacks: { title: it => `Tick ${it[0].parsed.x}`,
-      label: it => { const v = it.parsed.y; return ` S = ${sgn(v, 2, "")} → ${Math.abs(v) < dz ? "conserver" : (v > 0 ? "acheter " : "vendre ") + nf(0).format(Math.min(1, 2 * Math.abs(v)) * 100) + " u."}`; } } } } } });
+      label: it => { const v = it.parsed.y, z = zoneOf[it.parsed.x] || { buy: dz, sell: dz }; return ` S = ${sgn(v, 2, "")} (seuils −${nf(2).format(z.sell)} / +${nf(2).format(z.buy)}) → ${(v >= 0 ? v < z.buy : -v < z.sell) ? "conserver" : (v > 0 ? "acheter " : "vendre ") + nf(0).format(Math.min(1, 2 * Math.abs(v)) * 100) + " u."}`; } } } } } });
 }
 
 /* ------------------------------------------------------------ journal */
@@ -907,6 +923,8 @@ function renderMethod() {
   const B = D.backtest;
   $("m-cycle").innerHTML = products.map(p => { const c = D.current[p].cycle; return `<tr><td>${p}</td><td class="n">${c.peak}</td><td class="n">${sgn(c.ac_peak, 2, "")}</td><td class="n">${sgn(c.ac_half, 2, "")}</td><td>${c.is_cycle ? `<span class="up">✓</span> cycle de ${c.peak} ticks` : `<span class="down">✕</span> tendance, pas de cycle`}</td></tr>`; }).join("");
   $("m-rand").innerHTML = ["H1", "H2"].map(h => `<tr><td>${h === "H1" ? "1re" : "2e"} (ticks ${D.halves[h][0]}–${D.halves[h][1]})</td>${products.map(p => `<td class="n ${cls(B.random[h][p])}">${sgn(B.random[h][p])}</td>`).join("")}</tr>`).join("");
+  const AD = B.adaptive || {}, adName = { normal: "Signal normal", inverted: "Signal inversé (cassé)", "broken from t300": "Signal cassé à partir du tick 300" };
+  $("m-adapt").innerHTML = Object.entries(AD).map(([k, v]) => `<tr><td>${adName[k] || k}</td><td class="n ${cls(v.fixed)}">${arrow(v.fixed)} ${sgn(v.fixed)}</td><td class="n ${cls(v.adaptive)}">${arrow(v.adaptive)} ${sgn(v.adaptive)}</td></tr>`).join("");
   const famFR = { mean_reversion: "Retour à la moyenne", trend: "Tendance" };
   $("m-methods").innerHTML = B.methods.map(m => `<tr class="${m.family === "mean_reversion" ? "retained" : ""}"><td>${esc(m.label)}</td><td>${famFR[m.family]}</td>${products.map(p => ["H1", "H2"].map(h => { const v = m[p][h].excess; return `<td class="n ${cls(v)}">${arrow(v)} ${sgn(v)}</td>`; }).join("")).join("")}</tr>`).join("");
 

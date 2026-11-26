@@ -16,7 +16,8 @@ import random
 import sys
 import time
 
-from backtest import endgame_test, load, simulate
+from adaptive import adaptive_series, describe, hit_rates, dead_zones
+from backtest import adaptive_test, endgame_test, load, simulate
 from endgame import (END_UTC, ENDGAME_TICKS, PARK_TICKS, PERIODS, TICK_UNCERTAINTY,
                      estimate_remaining_ticks, fit_model, forecast, predict)
 from signals import (DEAD_ZONE, FAMILIES, METHODS, MIN_HISTORY, PRODUCT_CONFIG,
@@ -71,11 +72,12 @@ def fr(x, d=2):
     return f"{x:+.{d}f}".replace(".", ",").replace("-", "−")
 
 
-def reason(p, s, contribs, units, order):
+def reason(p, s, contribs, units, order, dz):
     side = "vente" if units < 0 else "achat"
     where = "au-dessus" if s < 0 else "en dessous"
     parts = ", ".join(f"{LABELS[m].split(' (')[0]} {fr(v)}" for m, v, _ in contribs)
-    txt = f"S = {fr(s)} (|S| ≥ {str(DEAD_ZONE).replace('.', ',')}) : prix {where} de son niveau normal [{parts}] → {side} {abs(units):.0f} u."
+    seuil = f"{dz['sell' if s < 0 else 'buy']:.2f}".replace(".", ",")
+    txt = f"S = {fr(s)} (|S| ≥ seuil {seuil}) : prix {where} de son niveau normal [{parts}] → {side} {abs(units):.0f} u."
     if abs(units) + 0.5 < 100 * abs(order):
         txt += " Quantité réduite (argent ou stock insuffisant)."
     return txt
@@ -100,14 +102,14 @@ def main():
                 sig[p][m][t] = f(h)
 
     cfg_sig = {}  # signals of the configured methods (custom windows)
-    S, orders = {}, {}
+    S, orders, zones = {}, {}, {}
     for p in products:
         cfg_sig[p] = {}
         for m, kw, w in PRODUCT_CONFIG.get(p, []):
             cfg_sig[p][m] = [METHODS[m](prices[p][: t + 1], **kw) if t >= first else 0.0
                              for t in range(n)]
         S[p] = [product_index(prices[p][: t + 1], p) if t >= first else 0.0 for t in range(n)]
-        orders[p] = [to_order(s, DEAD_ZONE) for s in S[p]]
+        orders[p], zones[p] = adaptive_series(prices[p], S[p], p, first)
 
     # ------------------------------------------------- simulated live strategy
     track = []
@@ -123,7 +125,7 @@ def main():
             trades.append({"tick": hist[i]["t"], "ts": hist[i]["timestamp"], "p": p,
                            "units": r(u, 1), "price": r(prices[p][i]), "S": r(S[p][k], 3),
                            "order": r(orders[p][k], 3),
-                           "reason": reason(p, S[p][k], contribs, u, orders[p][k])})
+                           "reason": reason(p, S[p][k], contribs, u, orders[p][k], zones[p][k])})
     sim_ticks = [hist[st["i"]]["t"] for st in track]
 
     def drawdown(v):
@@ -233,7 +235,12 @@ def main():
         contribs = [{"method": m, "label": LABELS[m], "weight": w,
                      "params": kw, "value": r(cfg_sig[p][m][last], 3)}
                     for m, kw, w in PRODUCT_CONFIG.get(p, [])]
+        rates = hit_rates(prices[p], S[p], p)
+        dz = dead_zones(rates)
         current[p] = {"S": r(S[p][last], 3), "order": r(orders[p][last], 3),
+                      "dead_zone": {k: r(v, 3) for k, v in dz.items()},
+                      "hit_rates": {k: list(v) for k, v in rates.items()},
+                      "adaptive": describe(rates, dz) if PRODUCT_CONFIG.get(p) else "",
                       "methods": contribs, "why": WHY.get(p, ""),
                       "family": "mean_reversion" if PRODUCT_CONFIG.get(p) else "none",
                       "cycle": cycle_period(prices[p])}
@@ -256,7 +263,11 @@ def main():
                 "dd_hold": [r(x, 3) for x in drawdown(hold)], "trades": trades},
         "current": current,
         "endgame": endgame,
-        "backtest": {"methods": methods_table, "families": families_table,
+        "dead_zones": {p: [None if z is None else [r(z["sell"], 3), r(z["buy"], 3)] for z in zones[p]]
+                       for p in products},
+        "backtest": {"adaptive": {k: {kk: r(vv, 1) for kk, vv in v.items()}
+                                  for k, v in adaptive_test(prices, products, S, first, mid, n).items()},
+                     "methods": methods_table, "families": families_table,
                      "sweep": sweep, "random": rand},
         "log": log,
     }

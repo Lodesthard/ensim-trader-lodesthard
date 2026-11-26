@@ -20,6 +20,7 @@ import random
 import sys
 import urllib.request
 
+from adaptive import adaptive_series
 from endgame import ENDGAME_TICKS, endgame_order
 from signals import DEAD_ZONE, FAMILIES, METHODS, MIN_HISTORY, product_index, to_order
 
@@ -227,6 +228,30 @@ def main():
         tots = [sum(r[e].values()) for r in rows]
         print(f"  error {e:+d} ticks: mean {sum(tots) / len(tots):+.0f} EUR, "
               f"positive {sum(t > 0 for t in tots)}/{len(tots)}")
+
+    # 6. Success-based dead zone vs fixed dead zone, incl. broken-signal stress tests.
+    print()
+    print("6) Success-based dead zone (adaptive.py) -- excess EUR, 2nd half")
+    for name, total in adaptive_test(prices, products, final_idx, first, mid, n).items():
+        print(f"  {name:<22} fixed {total['fixed']:>7.0f}   adaptive {total['adaptive']:>7.0f}")
+
+
+def adaptive_test(prices, products, s_idx, first, mid, n):
+    """Fixed vs success-based dead zone on the 2nd half: normal signal, signal
+    inverted (broken), signal broken from tick index 299 on."""
+    cases = {
+        "normal": s_idx,
+        "inverted": {p: [-x for x in s_idx[p]] for p in products},
+        "broken from t300": {p: [x if t < 299 else -x for t, x in enumerate(s_idx[p])]
+                             for p in products},
+    }
+    out = {}
+    for name, S in cases.items():
+        fixed = {p: [to_order(s, DEAD_ZONE) for s in S[p]] for p in products}
+        adapt = {p: adaptive_series(prices[p], S[p], p, first)[0] for p in products}
+        out[name] = {k: sum(simulate(prices, o, mid, n - 1, products)[0].values())
+                     for k, o in (("fixed", fixed), ("adaptive", adapt))}
+    return out
 
 
 if __name__ == "__main__":
