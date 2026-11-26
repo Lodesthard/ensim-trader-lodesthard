@@ -26,6 +26,7 @@ from signals import (DEAD_ZONE, FAMILIES, METHODS, MIN_HISTORY, PRODUCT_CONFIG,
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "data", "dashboard_data.js")
 LOG = os.path.join(ROOT, "docs", "data", "log.csv")
+REFS = os.path.join(ROOT, "docs", "data", "reference_history.csv")
 DEAD_ZONES = [round(0.05 * i, 2) for i in range(0, 19)]
 
 LABELS = {
@@ -223,6 +224,37 @@ def main():
                  for row in eg_rows],
     }
 
+    # ------------------------------------------- reference traders since tick 1
+    refs = None
+    if os.path.exists(REFS):
+        with open(REFS, encoding="utf-8", newline="") as f:
+            rrows = list(csv.DictReader(f))
+        num = lambda v: float(v) if v not in ("", None) else None
+        cols = ["lodesthard", "random_trader", "random_buyer", "random_seller", "leader"]
+        refs = {"ticks": [int(x["tick"]) for x in rrows],
+                **{c: [num(x[c]) for x in rrows] for c in cols},
+                "rank": [int(x["rank"]) if x["rank"] else None for x in rrows],
+                "n_traders": [int(x["n_traders"]) for x in rrows],
+                "leader_name": rrows[-1]["leader_name"] if rrows else ""}
+        # hold value at each reference tick, and risk summary per trajectory
+        pidx = {row["t"]: i for i, row in enumerate(hist)}
+        refs["hold"] = [r(1000 + sum(1000 * prices[p][pidx[t]] for p in products), 2)
+                        if t in pidx else None for t in refs["ticks"]]
+
+        def risk(series):
+            pts = [v for v in series if v is not None]
+            if len(pts) < 2:
+                return None
+            peak, worst = pts[0], 0.0
+            for v in pts:
+                peak = max(peak, v)
+                worst = min(worst, v / peak - 1)
+            rets = [math.log(b / a) for a, b in zip(pts, pts[1:]) if a > 0 and b > 0]
+            return {"dd": r(100 * worst, 2), "vol": r(100 * std(rets), 3),
+                    "last": r(pts[-1], 2), "first": r(pts[0], 2), "n": len(pts)}
+        refs["risk"] = {c: risk(refs[c]) for c in cols + ["hold"]}
+        refs["risk"]["strategy"] = risk(strat)
+
     # --------------------------------------------------------------- real log
     log = []
     if os.path.exists(LOG):
@@ -270,6 +302,7 @@ def main():
                      "methods": methods_table, "families": families_table,
                      "sweep": sweep, "random": rand},
         "log": log,
+        "refs": refs,
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:

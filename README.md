@@ -218,16 +218,21 @@ une phase de C. 8 ticks reste en dessous.
    à `docs/data/log.csv` à chaque nouveau tick du marché (horodatage, prix,
    argent, stocks, valeur totale, valeur des trois références, S, ordres, phase,
    ticks restants, raisons) ;
-2. `scripts/build_dashboard.py` régénère `docs/data/dashboard_data.js` ;
-3. le workflow commite `decision.json` et `docs/data/`.
+2. `scripts/reference_history.py` reconstruit la valeur totale de chaque trader
+   tick par tick depuis le tick 1, à partir de l'historique Git du classement de
+   l'organisateur (`docs/data/leaderboard.json` y est commité à chaque tick) →
+   `docs/data/reference_history.csv` ;
+3. `scripts/build_dashboard.py` régénère `docs/data/dashboard_data.js` ;
+4. le workflow commite `decision.json` et `docs/data/`. Les étapes 2 et 3 ne
+   peuvent pas bloquer le commit de la décision.
 
 ## 5. Tableau de bord — `docs/index.html`
 
 | Section | Contenu | Décision aidée |
 |---|---|---|
 | Synthèse | valeur réelle, rang, écart vs « ne rien faire » et vs `random_trader`, décision publiée, compte à rebours de fin de partie | où en est-on ? |
-| 1. Performance | valeur simulée vs « ne rien faire », valeur réelle et références (journal), classement en direct | garder ou couper le signal |
-| 2. Risque | drawdown, volatilité glissante sur 24 ticks | réduire la taille des ordres ? |
+| 1. Performance | valeur réelle et des trois références depuis le tick 1 (valeur ou écart vs « ne rien faire »), stratégie simulée, classement en direct | garder ou couper le signal |
+| 2. Risque | drawdown et volatilité de chaque trajectoire (nous, références, 1er élève, stratégie simulée), drawdown dans le temps, volatilité glissante par produit | quel compromis rendement / risque viser |
 | 3. Signal par produit | prix, bandes de Bollinger, trades, prévision de fin, indice S avec sa zone morte ajustée | acheter, vendre ou attendre |
 | 4. Journal | décisions tick par tick avec leur raison (simulé et réel) | comprendre chaque trade |
 | 5. Méthode | cycles, méthodes testées, zone morte, ajustement selon la réussite, règle de fin, limites | justifier les choix |
@@ -237,6 +242,20 @@ une phase de C. 8 ticks reste en dessous.
 Ticks 50 à 384, stratégie complète (sans la règle de fin, qui ne s'applique qu'à
 la vraie fin) : **37 072 € contre 19 631 € pour « ne rien faire »** (+17 442 €),
 559 trades, pire baisse −12,9 % contre −17,8 %.
+
+Trajectoires réelles reconstruites depuis le classement de l'organisateur
+(ticks 1 à 384) :
+
+| Trajectoire | Début → fin | Drawdown max | Volatilité / tick |
+|---|---|---|---|
+| Ne rien faire | 17 374 € → 19 631 € (+13,0 %) | −17,8 % | 1,12 % |
+| random_trader | 17 374 € → 19 205 € (+10,5 %) | −18,4 % | 0,96 % |
+| random_buyer | 17 374 € → 19 538 € (+12,5 %) | −19,1 % | 1,19 % |
+| random_seller | 17 374 € → 18 006 € (+3,6 %) | −0,5 % | 0,09 % |
+| 1er élève | 17 374 € → 21 853 € (+25,8 %) | −16,8 % | 1,00 % |
+
+Notre trader n'a été inscrit au classement par l'organisateur qu'au tick 382,
+avec la dotation de départ (1 000 € + 1 000 unités de chaque produit).
 
 ## 7. Limites
 
@@ -272,5 +291,6 @@ python scripts/algorithm.py              # une décision réelle (écrit decisio
 | `scripts/endgame.py` | modèle de prévision et règle de fin de partie |
 | `scripts/algorithm.py` | décision réelle, garde-fous, journal |
 | `scripts/backtest.py` | rejoue les règles de l'organisateur sur l'historique |
+| `scripts/reference_history.py` | trajectoires réelles de tous les traders depuis le tick 1 |
 | `scripts/build_dashboard.py` | données du tableau de bord |
 | `docs/index.html` | tableau de bord |

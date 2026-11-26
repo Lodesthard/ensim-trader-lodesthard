@@ -303,20 +303,26 @@ footer p { margin: 4px auto; max-width: 80ch; }
       <p>KPI 1 — valeur totale au fil du temps, comparée à « ne rien faire » et aux trois traders de référence.</p>
     </div>
     <div class="grid-2">
-      <figure class="card" style="margin:0">
+      <figure class="card" style="margin:0;grid-column:1 / -1">
         <div class="toolbar" style="justify-content:space-between">
-          <div><h3>Valeur du portefeuille</h3></div>
-          <div class="seg" role="group" aria-label="Mesure affichée">
-            <button type="button" data-perf="value" aria-pressed="true">Valeur €</button>
-            <button type="button" data-perf="excess" aria-pressed="false">Écart €</button>
+          <div><h3>Valeur totale au fil du temps</h3></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div class="seg" role="group" aria-label="Trajectoires affichées">
+              <button type="button" data-view="real" aria-pressed="true">Réel et références</button>
+              <button type="button" data-view="sim" aria-pressed="false">Stratégie simulée</button>
+            </div>
+            <div class="seg" role="group" aria-label="Mesure affichée">
+              <button type="button" data-perf="value" aria-pressed="true">Valeur €</button>
+              <button type="button" data-perf="excess" aria-pressed="false">Écart vs ne rien faire</button>
+            </div>
           </div>
         </div>
         <p class="lede" id="perf-lede">Stratégie simulée sur l'historique réel, règles d'exécution de l'organisateur.</p>
         <div class="legend" id="perf-legend"></div>
         <div class="chart-box tall"><canvas id="c-perf" role="img" aria-label="Valeur du portefeuille simulé et de la stratégie ne rien faire, par tick"></canvas></div>
-        <figcaption class="helps"><b>Décision aidée :</b> garder ou changer le signal. Si la courbe or passe durablement sous « ne rien faire », le signal détruit de la valeur et doit être coupé ou réglé.</figcaption>
+        <figcaption class="helps"><b>Décision aidée :</b> garder ou changer le signal. Si la courbe or passe durablement sous « ne rien faire » ou sous random_trader, le signal détruit de la valeur et doit être coupé ou réglé. random_buyer suit le marché à la hausse, random_seller s'est mis en argent : ce sont les deux extrêmes à battre.</figcaption>
       </figure>
-      <figure class="card" style="margin:0">
+      <figure class="card" style="margin:0;grid-column:1 / -1">
         <h3>Classement en direct</h3>
         <p class="lede">Valeur totale de chaque trader (flux public de l'organisateur). Références en gris, nous en or.</p>
         <div class="chart-box tall" id="lb-box"><canvas id="c-lb" role="img" aria-label="Classement des traders par valeur totale"></canvas></div>
@@ -332,6 +338,16 @@ footer p { margin: 4px auto; max-width: 80ch; }
       <p>KPI 2 — baisse depuis le dernier sommet (drawdown) et volatilité glissante de chaque produit.</p>
     </div>
     <div class="tiles" style="margin-bottom:var(--gap)" id="risk-tiles"></div>
+    <div class="card" style="margin-bottom:var(--gap)">
+      <h3>Risque de chaque trajectoire</h3>
+      <p class="lede">Depuis le tick 1 pour les références (historique Git du classement), depuis notre inscription pour nous. Drawdown = pire baisse depuis un sommet ; volatilité = écart-type des variations par tick de la valeur totale.</p>
+      <div class="table-wrap"><table>
+        <caption class="sr-only">Rendement et risque de chaque trajectoire</caption>
+        <thead><tr><th>Trajectoire</th><th class="n">Ticks</th><th class="n">Valeur début → fin</th><th class="n">Variation</th><th class="n">Drawdown max</th><th class="n">Volatilité / tick</th></tr></thead>
+        <tbody id="risk-refs"></tbody>
+      </table></div>
+      <p class="helps"><b>Décision aidée :</b> quel compromis rendement / risque viser. random_seller ne risque presque rien mais ne gagne presque rien ; random_buyer gagne avec le marché mais encaisse toute sa baisse. La stratégie vise mieux que les deux.</p>
+    </div>
     <div class="grid-2">
       <figure class="card" style="margin:0">
         <h3>Drawdown</h3>
@@ -703,44 +719,79 @@ function renderEndgame() {
 }
 
 /* ------------------------------------------------------------ performance */
-let perfMode = "value";
-function logSeries(col) {
-  if (!D || !D.log.length) return [];
-  return D.log.filter(r => r[col] !== undefined && r[col] !== "").map(r => ({ x: +r.tick, y: +r[col] }));
-}
+let perfMode = "value", perfView = "real";
+/* direct labels at the right end of datasets that set `endLabel` */
+const endLabels = { id: "endLabels", afterDatasetsDraw(c) {
+  const { ctx, chartArea: a } = c, items = [];
+  c.data.datasets.forEach((d, i) => {
+    if (!d.endLabel || !c.isDatasetVisible(i)) return;
+    const meta = c.getDatasetMeta(i), pt = meta.data[meta.data.length - 1];
+    if (pt) items.push({ y: pt.y, x: pt.x, text: d.endLabel, color: d.borderColor, dash: d.borderDash || [] });
+  });
+  items.sort((p, q) => p.y - q.y);
+  for (let k = 1; k < items.length; k++) items[k].y = Math.max(items[k].y, items[k - 1].y + 15);
+  ctx.save(); ctx.font = "500 12px Inter, sans-serif"; ctx.textBaseline = "middle";
+  items.forEach(it => {
+    const x0 = a.right + 8;
+    ctx.strokeStyle = it.color; ctx.lineWidth = 2; ctx.setLineDash(it.dash);
+    ctx.beginPath(); ctx.moveTo(x0, it.y); ctx.lineTo(x0 + 14, it.y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = COL.ink2; ctx.fillText(it.text, x0 + 19, it.y);
+  });
+  ctx.restore();
+} };
+if (HAS_CHART) Chart.register(endLabels);
+const REF_SERIES = [
+  { key: "lodesthard", label: "Nous (lodesthard)", color: () => COL.gold, width: 3, dash: [] },
+  { key: "random_trader", label: "random_trader", color: () => COL.B, width: 1.8, dash: [] },
+  { key: "random_buyer", label: "random_buyer", color: () => COL.C, width: 1.8, dash: [] },
+  { key: "random_seller", label: "random_seller", color: () => "#d9cfb8", width: 1.8, dash: [8, 4] },
+  { key: "hold", label: "Ne rien faire", color: () => COL.hold, width: 1.5, dash: [2, 4] },
+];
 function renderPerf() {
   if (!D) return;
-  const s = D.sim;
-  const strat = s.ticks.map((t, i) => ({ x: t, y: perfMode === "value" ? s.strategy[i] : s.strategy[i] - s.hold[i] }));
-  const hold = s.ticks.map((t, i) => ({ x: t, y: perfMode === "value" ? s.hold[i] : 0 }));
-  const ds = [
-    { label: "Stratégie simulée", data: strat, borderColor: COL.gold, backgroundColor: COL.gold, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0 },
-    { label: "Ne rien faire", data: hold, borderColor: COL.hold, backgroundColor: COL.hold, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4 },
-  ];
-  const legend = [`<span><i style="background:var(--gold)"></i>Stratégie simulée</span>`, `<span><i class="dash"></i>Ne rien faire</span>`];
-  const real = logSeries("total_value");
-  if (real.length) {
-    ds.push({ label: "Réel (journal)", data: perfMode === "value" ? real : real.map(p => ({ x: p.x, y: p.y - (s.hold[s.ticks.indexOf(p.x)] ?? p.y) })), borderColor: COL.up, backgroundColor: COL.up, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5 });
-    legend.push(`<span><i style="background:var(--up)"></i>Réel (journal)</span>`);
-    [["random_trader", COL.blue], ["random_buyer", COL.C], ["random_seller", COL.ink3]].forEach(([k, c]) => {
-      const ser = logSeries(k); if (!ser.length || perfMode !== "value") return;
-      ds.push({ label: k, data: ser, borderColor: c, backgroundColor: c, borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
-      legend.push(`<span><i style="background:${c}"></i>${k}</span>`);
+  const R = D.refs, ex = perfMode === "excess";
+  const ds = [], legend = [];
+  const leg = (color, dash, label, w = 3) => `<span><i style="background:${dash.length ? `repeating-linear-gradient(90deg,${color} 0 ${dash[0]}px,transparent ${dash[0]}px ${dash[0] + dash[1]}px)` : color};height:${w}px"></i>${label}</span>`;
+  if (perfView === "real" && R) {
+    REF_SERIES.forEach(sr => {
+      const pts = R.ticks.map((t, i) => (R[sr.key][i] == null || R.hold[i] == null) ? null : { x: t, y: ex ? R[sr.key][i] - R.hold[i] : R[sr.key][i] }).filter(Boolean);
+      if (!pts.length || (ex && sr.key === "hold")) return;
+      const c = sr.color();
+      ds.push({ label: sr.label, data: pts, borderColor: c, backgroundColor: c, borderWidth: sr.width, borderDash: sr.dash,
+        pointRadius: pts.length < 30 ? 3 : 0, pointHoverRadius: 5, endLabel: sr.label.split(" (")[0] });
+      legend.push(leg(c, sr.dash, sr.label));
     });
-    $("perf-lede").textContent = "Stratégie simulée sur l'historique, valeur réelle relevée à chaque exécution, et traders de référence.";
-  } else if (live.holdings && perfMode === "value") {
-    const lp = lastPrices();
-    ds.push({ label: "Réel (dernier relevé)", data: [{ x: lp.last.t, y: portfolioValue(live.holdings, lp.last) }], borderColor: COL.surface, backgroundColor: COL.up, borderWidth: 2, pointRadius: 7, pointHoverRadius: 9, pointStyle: "rectRot", showLine: false });
-    legend.push(`<span><i style="background:var(--up);width:10px;height:10px;transform:rotate(45deg)"></i>Réel (dernier relevé)</span>`);
-    $("perf-lede").textContent = "Stratégie simulée sur l'historique réel. Le journal réel (docs/data/log.csv) ajoutera la valeur réelle et les références au fil des ticks.";
+    const first = R.ticks[R.lodesthard.findIndex(v => v != null)];
+    $("perf-lede").innerHTML = "Valeur totale de chaque trader, reconstruite tick par tick depuis l'historique Git du classement de l'organisateur." +
+      (first ? ` <b>Nous ne figurons au classement que depuis le tick ${first}</b> (inscription par l'organisateur), avec la dotation de départ.` : "");
+  } else {
+    const s = D.sim;
+    ds.push({ label: "Stratégie simulée", data: s.ticks.map((t, i) => ({ x: t, y: ex ? s.strategy[i] - s.hold[i] : s.strategy[i] })), borderColor: COL.gold, backgroundColor: COL.gold, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, endLabel: "Stratégie" });
+    legend.push(leg(COL.gold, [], "Stratégie simulée"));
+    if (!ex) {
+      ds.push({ label: "Ne rien faire", data: s.ticks.map((t, i) => ({ x: t, y: s.hold[i] })), borderColor: COL.hold, backgroundColor: COL.hold, borderWidth: 1.5, borderDash: [2, 4], pointRadius: 0, pointHoverRadius: 4, endLabel: "Ne rien faire" });
+      legend.push(leg(COL.hold, [2, 4], "Ne rien faire"));
+    }
+    $("perf-lede").textContent = "Ce que la stratégie complète aurait fait depuis le tick 50, sur les vrais prix et avec les règles d'exécution de l'organisateur (sans notre effet sur le prix).";
   }
   $("perf-legend").innerHTML = legend.join("");
   chart("c-perf", { type: "line", data: { datasets: ds }, options: {
-    responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
+    responsive: true, maintainAspectRatio: false, parsing: false, normalized: true, layout: { padding: { right: 130 } },
     interaction: { mode: "nearest", axis: "x", intersect: false },
-    scales: { x: linearX("Tick"), y: valueY(v => nf(0).format(v) + " €") },
-    plugins: { tooltip: { callbacks: { title: it => `Tick ${it[0].parsed.x} · ${tsOfTick(it[0].parsed.x)}`, label: it => ` ${it.dataset.label} : ${perfMode === "value" ? eur(it.parsed.y) : sgn(it.parsed.y)}` } } },
+    scales: { x: linearX("Tick"), y: valueY(v => (ex && v > 0 ? "+" : "") + nf(0).format(v) + " €") },
+    plugins: { tooltip: { itemSort: (p, q) => q.parsed.y - p.parsed.y, callbacks: { title: it => `Tick ${it[0].parsed.x} · ${tsOfTick(it[0].parsed.x)}`, label: it => ` ${it.dataset.label} : ${ex ? sgn(it.parsed.y) + " vs ne rien faire" : eur(it.parsed.y)}` } } },
   } });
+}
+function renderRefRisk() {
+  if (!D || !D.refs || !D.refs.risk) return;
+  const K = D.refs.risk;
+  const rows = [["lodesthard", "Nous (réel)"], ["strategy", "Stratégie simulée (depuis tick 50)"], ["hold", "Ne rien faire"],
+    ["random_trader", "random_trader"], ["random_buyer", "random_buyer"], ["random_seller", "random_seller"],
+    ["leader", `1er élève (${esc(D.refs.leader_name)})`]];
+  $("risk-refs").innerHTML = rows.filter(([k]) => K[k]).map(([k, l]) => {
+    const v = K[k], g = v.last / v.first - 1;
+    return `<tr class="${k === "lodesthard" || k === "strategy" ? "retained" : ""}"><td>${l}</td><td class="n">${v.n}</td><td class="n">${eur(v.first)} → ${eur(v.last)}</td><td class="n ${cls(g)}">${sgn(100 * g, 1, " %")}</td><td class="n">${nf(1).format(v.dd)} %</td><td class="n">${nf(2).format(v.vol)} %</td></tr>`;
+  }).join("");
 }
 let liveDone = false;
 function renderLeaderboard() {
@@ -961,6 +1012,10 @@ const obs = new IntersectionObserver(es => es.forEach(e => {
 }), { rootMargin: "-40% 0px -55% 0px" });
 document.querySelectorAll("section.block").forEach(s => obs.observe(s));
 
+document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => {
+  perfView = b.dataset.view;
+  document.querySelectorAll("[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b)); renderPerf();
+}));
 document.querySelectorAll("[data-perf]").forEach(b => b.addEventListener("click", () => {
   perfMode = b.dataset.perf;
   document.querySelectorAll("[data-perf]").forEach(x => x.setAttribute("aria-pressed", x === b)); renderPerf();
@@ -970,7 +1025,7 @@ document.querySelectorAll("[data-perf]").forEach(b => b.addEventListener("click"
 function renderAll() {
   renderTicker(); renderTiles();
   if (!D) return;
-  renderEndgame(); renderPerf(); renderLeaderboard(); renderRisk(); renderTabs(); renderProduct(); renderJournal(); renderMethod();
+  renderEndgame(); renderPerf(); renderLeaderboard(); renderRisk(); renderRefRisk(); renderTabs(); renderProduct(); renderJournal(); renderMethod();
 }
 setInterval(renderEndgame, 60000);
 renderAll();
