@@ -9,7 +9,7 @@ unit bought late has no time to come back, so during the last ENDGAME_TICKS:
     to the best price still expected before the end (don't sell on the way up);
   * buy only if the current price is below the forecast final price AND close
     to the lowest price still expected (the rebound must happen before the end);
-  * size grows with the expected gain: 10 % gap -> 100 units;
+  * size grows with the expected gain: 5 % gap -> 100 units (x2, aggressive);
   * otherwise hold (any other trade would lose money by the end).
 - B (slow rise, no reliable cycle): in the last PARK_TICKS, idle cash is parked
   in B in small slices, because B rises on average and cash does not.
@@ -23,15 +23,17 @@ import math
 from datetime import datetime, timedelta, timezone
 
 END_UTC = datetime(2026, 12, 1, 14, 0, tzinfo=timezone.utc)
-ENDGAME_TICKS = 12      # endgame starts when this many ticks (or fewer) remain
+ENDGAME_TICKS = 8       # endgame starts when this many ticks (or fewer) remain;
+                        # < half a C cycle (12), so it never overrides a whole C swing.
+                        # Backtest with x2 orders: 12 -> +79 EUR, 8 -> +184 EUR, 6 -> +52 EUR
 TICK_UNCERTAINTY = 3    # +/- ticks around the estimated last tick
 NEAR_PEAK = 0.97        # sell only if price >= 97 % of the best price still expected
                         # (buy only if price <= lowest expected / 0.97)
-FULL_SELL_GAP = 0.10    # 10 % above the forecast final price -> sell 100 units
+FULL_SELL_GAP = 0.05    # 5 % gap with the forecast final price -> 100 units
 MIN_GAP = 0.01          # below +1 % expected gain, not worth selling
 MIN_R2 = 0.90           # model must explain 90 % of the price variance
 PARK_TICKS = 6          # park idle cash in B during the last 6 ticks
-PARK_ORDER = 0.3        # 30 units of B per tick at most
+PARK_ORDER = 0.6        # 60 units of B per tick at most
 PACE_WINDOW_H = 72      # market pace measured over the last 72 hours
 PERIODS = {"A": 48, "C": 24}
 

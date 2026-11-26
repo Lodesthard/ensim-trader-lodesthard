@@ -5,7 +5,8 @@ Every method returns a value in [-1, +1] expressed in the same unit
 the dead zone mean the same thing for every method and every product.
 
     S = sum(w_i * s_i) / sum(w_i)          (raw index, in [-1, +1])
-    order = S / 2 if |S| >= dead_zone else 0   (sent to decision.json)
+    order = clip(ORDER_GAIN * S) if |S| >= dead_zone else 0   (sent to decision.json)
+    ORDER_GAIN = 2: S = 0.5 -> order 1.0 -> 100 units (deliberately aggressive)
 
 Families:
 - "mean_reversion": price far above its normal level -> sell, far below -> buy.
@@ -136,6 +137,10 @@ PRODUCT_CONFIG = {
 }
 
 DEAD_ZONE = 0.20
+# Order size multiplier. Backtest on the real history, 2nd half, dead zone 0.20:
+# gain 0.5 -> +2 287 EUR (max drawdown -14.4 %), 1 -> +4 565 EUR (-11.9 %),
+# 2 -> +7 941 EUR (-12.0 %); never trading: max drawdown -16.8 %.
+ORDER_GAIN = 2.0
 
 
 def product_index(prices, product):
@@ -158,7 +163,7 @@ def raw_index(prices, weights):
 
 
 def to_order(index, dead_zone):
-    """Dead zone, then halve: index 0.8 -> order 0.4 -> 40 units."""
+    """Dead zone, then x ORDER_GAIN, clipped: index 0.5 -> order 1.0 -> 100 units."""
     if abs(index) < dead_zone:
         return 0.0
-    return index / 2
+    return max(-1.0, min(1.0, ORDER_GAIN * index))

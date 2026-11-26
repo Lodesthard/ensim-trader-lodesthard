@@ -383,7 +383,7 @@ footer p { margin: 4px auto; max-width: 80ch; }
           <h3>Indice S et zone morte</h3>
           <div class="legend"><span><i id="s-sw"></i>Indice S</span><span><i class="band"></i>Zone morte (pas de trade)</span></div>
           <div class="chart-box short"><canvas id="c-s" role="img" aria-label="Indice S du produit et zone morte"></canvas></div>
-          <figcaption class="helps"><b>Décision aidée :</b> acheter, vendre ou attendre. Hors de la bande, on envoie S ÷ 2 (S = 0,8 → 40 unités). Dans la bande, on ne fait rien.</figcaption>
+          <figcaption class="helps"><b>Décision aidée :</b> acheter, vendre ou attendre. Hors de la bande, on envoie 2 × S, plafonné à ±1 (S = 0,5 → 100 unités). Dans la bande, on ne fait rien.</figcaption>
         </figure>
       </div>
     </div>
@@ -479,10 +479,10 @@ footer p { margin: 4px auto; max-width: 80ch; }
 
     <figure class="card" style="margin:var(--gap) 0 0">
       <h3>Test de la règle de fin de partie</h3>
-      <p class="lede">On fait comme si la partie s'arrêtait à différents ticks passés : gain ajouté par la règle (12 derniers ticks) par rapport à la stratégie normale, A + B + C.</p>
+      <p class="lede">On fait comme si la partie s'arrêtait à différents ticks passés : gain ajouté par la règle (8 derniers ticks) par rapport à la stratégie normale, A + B + C.</p>
       <div class="legend"><span><i style="background:var(--up)"></i>Règle gagnante</span><span><i style="background:var(--down)"></i>Règle perdante</span></div>
       <div class="chart-box"><canvas id="c-eg" role="img" aria-label="Gain ajouté par la règle de fin de partie selon le tick de fin simulé"></canvas></div>
-      <figcaption class="helps"><b>Pourquoi symétrique :</b> la 1re version bloquait tous les achats et perdait quand la fin tombait pendant une remontée (moyenne +165 €, 14 cas positifs sur 24). En achetant aussi près du creux quand le prix final prévu est plus haut, elle gagne dans presque tous les cas.</figcaption>
+      <figcaption class="helps"><b>Réglages :</b> la 1re version bloquait tous les achats et perdait quand la fin tombait pendant une remontée. La version symétrique achète aussi près du creux quand le prix final prévu est plus haut. Avec les ordres ×2, une fenêtre de 12 ticks (un demi-cycle de C) n'ajoutait que +79 € ; 8 ticks donnent +184 € et restent positifs avec 4 ticks d'erreur.</figcaption>
     </figure>
 
     <div class="card" style="margin-top:var(--gap)">
@@ -492,7 +492,7 @@ footer p { margin: 4px auto; max-width: 80ch; }
         <li><b>Test pas totalement hors échantillon.</b> Les périodes de cycle (48 et 24 ticks) ont été mesurées sur tout l'historique. Les deux moitiés donnent des résultats cohérents, mais ce n'est pas une preuve stricte.</li>
         <li><b>Fenêtres non optimisées.</b> Une fenêtre de 36 ticks ferait mieux sur A, mais on garde 48 parce que c'est la période du cycle. Choisir la fenêtre qui gagne le plus reviendrait à coller au passé.</li>
         <li><b>Fin de partie : nombre de ticks estimé.</b> Le marché avance à un rythme irrégulier (un tick toutes les 3 à 12 h). Le nombre de ticks restants est estimé sur les 72 dernières heures ; le test montre qu'une erreur de 4 ticks réduit le gain sans le rendre négatif en moyenne.</li>
-        <li><b>B volontairement inactif.</b> Toutes les méthodes testées perdent sur B. Seule une variante « achat seulement » gagne un peu (+328 € / +224 €, 6 trades) : option pour plus tard.</li>
+        <li><b>B volontairement inactif.</b> Toutes les méthodes testées perdent sur B. Seule une variante « achat seulement » gagne un peu (6 trades sur tout l’historique) : en fin de partie, l’argent inutilisé est placé en B.</li>
       </ul>
     </div>
   </section>
@@ -673,7 +673,7 @@ function renderEndgame() {
   const lp = lastPrices();
   const RULE = {
     A: "Vendre près du sommet restant si prix > final prévu ; acheter près du creux restant si prix < final prévu ; sinon attendre.",
-    B: `Conservé. Dans les ${E.park_ticks} derniers ticks, l'argent inutilisé est placé en B (≤ 30 u. par tick).`,
+    B: `Conservé. Dans les ${E.park_ticks} derniers ticks, l'argent inutilisé est placé en B (≤ 60 u. par tick).`,
     C: "Même règle que A, cycle de 24 ticks.",
   };
   $("eg-body").innerHTML = products.map(p => {
@@ -852,7 +852,7 @@ function renderProduct() {
   ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
     scales: { x: linearX("Tick"), y: { ...valueY(v => nf(1).format(v)), min: -1, max: 1 } },
     plugins: { tooltip: { filter: it => it.dataset.label === "Indice S", callbacks: { title: it => `Tick ${it[0].parsed.x}`,
-      label: it => { const v = it.parsed.y; return ` S = ${sgn(v, 2, "")} → ${Math.abs(v) < dz ? "conserver" : (v > 0 ? "acheter " : "vendre ") + nf(0).format(Math.abs(v) * 50) + " u."}`; } } } } } });
+      label: it => { const v = it.parsed.y; return ` S = ${sgn(v, 2, "")} → ${Math.abs(v) < dz ? "conserver" : (v > 0 ? "acheter " : "vendre ") + nf(0).format(Math.min(1, 2 * Math.abs(v)) * 100) + " u."}`; } } } } } });
 }
 
 /* ------------------------------------------------------------ journal */

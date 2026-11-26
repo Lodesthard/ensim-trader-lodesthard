@@ -2,7 +2,7 @@
 
 Pipeline for each product (see signals.py and endgame.py):
 1. raw index S in [-1, +1] = weighted mean of same-family methods;
-2. dead zone: |S| < DEAD_ZONE -> 0, else order = S / 2 (S = 0.8 -> 40 units);
+2. dead zone: |S| < DEAD_ZONE -> 0, else order = 2 x S, clipped (S = 0.5 -> 100 units);
 3. endgame rule in the last ticks before the end (1 Dec 2026, 15:00 Paris);
 4. stock/budget layer: never sell more than held, never spend below the reserve
    (cash is shared by A, B, C, executed in that order like the organizer does).

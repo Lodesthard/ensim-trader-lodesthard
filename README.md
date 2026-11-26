@@ -17,11 +17,11 @@ Every 30 minutes `.github/workflows/auto_decide.yml` runs `scripts/algorithm.py`
 1. **Signal** (`scripts/signals.py`): per product, weighted mean of same-family
    methods → index S in [-1, +1]. A: mean reversion on its 48-tick cycle;
    C: mean reversion on its 24-tick cycle; B: no method (slow rise, selling loses it).
-2. **Dead zone**: |S| < 0.20 → hold, else order = S / 2 (S = 0.8 → 40 units).
-3. **Endgame** (`scripts/endgame.py`): in the last 12 ticks before
+2. **Dead zone**: |S| < 0.20 → hold, else order = 2 × S, clipped to ±1 (S = 0.5 → 100 units).
+3. **Endgame** (`scripts/endgame.py`): in the last 8 ticks before
    1 Dec 2026 15:00 (Paris), a trend + cycle model forecasts the final price of
    A and C; sell near the remaining peak if above it, buy near the remaining
-   trough if below it. Idle cash goes into B during the last 6 ticks.
+   trough if below it (5 % gap → 100 units). Idle cash goes into B during the last 6 ticks.
 4. **Guards**: never sell more than held, never spend below a 50 € reserve.
 
 Each new market tick appends one row to `docs/data/log.csv`, then
