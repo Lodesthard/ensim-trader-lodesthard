@@ -1,19 +1,970 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="utf-8"><title>Vérification des flux</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lodesthard Capital — Salle des marchés · ENSIM Trade Center</title>
+<meta name="description" content="Tableau de bord du trader lodesthard (TP2 ENSIM Trade Center) : performance, risque, signal par produit, journal des décisions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230b0906' stroke='%23c9a227' stroke-width='2'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='17' font-weight='700' text-anchor='middle' fill='%23e6c65c'%3EL%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #0b0906;
+  --surface: #14110c;
+  --surface-2: #1c1811;
+  --surface-3: #262017;
+  --rule: rgba(201, 162, 39, 0.28);
+  --rule-soft: rgba(201, 162, 39, 0.12);
+  --grid: rgba(242, 234, 216, 0.07);
+  /* ink */
+  --ink: #f2ead8;
+  --ink-2: #c9bea6;
+  --ink-3: #9a8f78;
+  --gold: #c9a227;
+  --gold-hi: #e6c65c;
+  --on-gold: #14110c;
+  /* status (always with ▲ ▼ and a word) */
+  --up: #4cbb7f;
+  --down: #ec6b5f;
+  --warn: #e0a83a;
+  /* categorical series, validated (dark, surface #14110c, all pairs) */
+  --s-a: #b3892a;
+  --s-b: #4a8ad4;
+  --s-c: #c95a9c;
+  --s-hold: #a69d8a;
+  /* type */
+  --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  /* rhythm */
+  --r: 6px;
+  --gap: 24px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 116px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 16px/1.6 var(--sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,162,39,.10), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(201,162,39,.018) 0 1px, transparent 1px 7px);
+  background-attachment: fixed;
+}
+a { color: var(--gold-hi); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 3px; border-radius: 3px; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--gold); color: var(--on-gold); padding: 8px 14px; z-index: 1000; font-weight: 600; }
+.skip:focus { left: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- ticker */
+.ticker {
+  position: sticky; top: 0; z-index: 40; height: 40px; overflow: hidden;
+  background: #070604; border-bottom: 1px solid var(--rule);
+  font: 500 13px/40px var(--mono); letter-spacing: .02em; white-space: nowrap;
+}
+.ticker-track { display: inline-flex; animation: tape 60s linear infinite; }
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker-item { display: inline-flex; gap: 10px; padding: 0 28px; border-right: 1px solid var(--rule-soft); }
+.ticker-item b { color: var(--gold-hi); font-weight: 500; }
+@keyframes tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .ticker { height: auto; white-space: normal; }
+  .ticker-track { animation: none; flex-wrap: wrap; }
+  .ticker-track[aria-hidden] , .ticker-dup { display: none; }
+}
+.ticker-dup { display: inline-flex; }
+.up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- header */
+header.mast { max-width: 1240px; margin: 0 auto; padding: 40px 24px 20px; display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; }
+.seal { width: 76px; height: 76px; }
+.mast h1 { font: 700 clamp(30px, 4.4vw, 48px)/1.05 var(--serif); margin: 0; letter-spacing: .01em; }
+.mast h1 span { color: var(--gold-hi); }
+.mast .sub { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; letter-spacing: .14em; text-transform: uppercase; }
+.status { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; font: 500 13px var(--mono); color: var(--ink-2); background: var(--surface); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.dot.live { background: var(--up); box-shadow: 0 0 0 4px rgba(76,187,127,.15); }
+.dot.off { background: var(--down); }
+
+nav.sections { position: sticky; top: 40px; z-index: 30; background: rgba(11,9,6,.92); backdrop-filter: blur(6px); border-top: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule); }
+nav.sections ul { list-style: none; margin: 0 auto; padding: 0 16px; max-width: 1240px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+nav.sections a { display: block; padding: 14px 14px; min-height: 48px; color: var(--ink-2); text-decoration: none; font: 500 13px var(--sans); letter-spacing: .12em; text-transform: uppercase; border-bottom: 2px solid transparent; transition: color .2s var(--ease), border-color .2s var(--ease); white-space: nowrap; }
+nav.sections a:hover { color: var(--ink); }
+nav.sections a[aria-current="true"] { color: var(--gold-hi); border-bottom-color: var(--gold); }
+
+main { max-width: 1240px; margin: 0 auto; padding: 8px 24px 64px; }
+section.block { padding-top: 48px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 3px double var(--rule); padding-bottom: 12px; margin-bottom: 20px; }
+.block-head h2 { font: 600 clamp(24px, 3vw, 32px)/1.2 var(--serif); margin: 0; }
+.block-head h2 .num { color: var(--gold); font-size: .7em; margin-right: 10px; vertical-align: .15em; font-family: var(--mono); font-weight: 400; }
+.block-head p { margin: 0; color: var(--ink-2); max-width: 62ch; font-size: 15px; }
+
+.banner { margin: 24px 0 0; padding: 14px 18px; border: 1px solid rgba(224,168,58,.45); border-left: 4px solid var(--warn); border-radius: var(--r); background: rgba(224,168,58,.07); color: var(--ink); display: flex; gap: 12px; align-items: flex-start; }
+.banner svg { flex: none; margin-top: 3px; color: var(--warn); }
+.banner[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- tiles */
+.tiles.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.tile { background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1px solid var(--rule-soft); border-radius: var(--r); padding: 18px 20px; position: relative; min-height: 132px; }
+.tile::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--rule-soft); border-radius: 3px; pointer-events: none; }
+.tile .k { font: 500 12px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.tile .v { font: 600 32px/1.15 var(--serif); margin: 8px 0 4px; font-variant-numeric: tabular-nums lining-nums; }
+.tile .v.gold { color: var(--gold-hi); }
+.tile .d { font: 400 13px/1.45 var(--sans); color: var(--ink-2); }
+.tile .d strong { font-weight: 600; }
+.decision-row { display: flex; gap: 10px; margin-top: 10px; }
+.chip { flex: 1; text-align: center; padding: 6px 4px; border-radius: 4px; background: var(--surface-3); font: 500 14px var(--mono); }
+.chip small { display: block; font: 500 11px var(--sans); color: var(--ink-3); letter-spacing: .1em; }
+
+.eg-head { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 14px; }
+.eg-head .lede { max-width: 70ch; }
+.countdown { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.countdown .k { font: 500 12px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+#eg-count { font: 600 34px/1.15 var(--serif); color: var(--gold-hi); }
+.eg-sub { font: 400 13px var(--mono); color: var(--ink-2); }
+.phase { display: inline-block; padding: 2px 10px; border-radius: 999px; font: 500 12px var(--mono); border: 1px solid var(--rule); }
+.phase.on { color: var(--on-gold); background: var(--gold); border-color: var(--gold); }
+
+/* ---------------------------------------------------------------- cards / charts */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: var(--gap); }
+.card { background: var(--surface); border: 1px solid var(--rule-soft); border-radius: var(--r); padding: 20px; min-width: 0; }
+.card h3 { font: 600 19px/1.3 var(--serif); margin: 0 0 4px; }
+.card .lede { margin: 0 0 14px; color: var(--ink-2); font-size: 14px; }
+.chart-box { position: relative; height: 320px; }
+.chart-box.tall { height: 380px; }
+.chart-box.short { height: 220px; }
+.helps { margin: 14px 0 0; padding: 10px 14px; border-left: 2px solid var(--gold); background: rgba(201,162,39,.06); font-size: 14px; color: var(--ink-2); }
+.helps b { color: var(--gold-hi); font-weight: 600; }
+.empty { display: grid; place-items: center; text-align: center; height: 100%; color: var(--ink-3); font-size: 14px; padding: 16px; border: 1px dashed var(--rule-soft); border-radius: var(--r); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.legend i.dash { background: repeating-linear-gradient(90deg, var(--s-hold) 0 5px, transparent 5px 8px) !important; }
+.legend i.tri-up, .legend i.tri-down { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-radius: 0; background: none; }
+.legend i.tri-up { border-bottom: 10px solid var(--up); }
+.legend i.tri-down { border-top: 10px solid var(--down); }
+.legend i.band { height: 10px; background: rgba(242,234,216,.12); border: 1px solid rgba(242,234,216,.3); }
+
+/* ---------------------------------------------------------------- controls */
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; background: var(--surface-2); }
+.seg button { appearance: none; border: 0; background: transparent; color: var(--ink-2); font: 500 13px var(--sans); padding: 8px 14px; min-height: 36px; border-radius: 999px; cursor: pointer; transition: background .2s var(--ease), color .2s var(--ease); }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--gold); color: var(--on-gold); }
+.toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.toolbar label { font-size: 13px; color: var(--ink-2); display: inline-flex; gap: 8px; align-items: center; }
+select { appearance: none; background: var(--surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23c9a227' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 8px 34px 8px 12px; min-height: 40px; font: 400 14px var(--sans); cursor: pointer; }
+input[type="checkbox"] { accent-color: var(--gold); width: 18px; height: 18px; }
+
+/* ---------------------------------------------------------------- product tabs */
+.tabs { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.tab { appearance: none; cursor: pointer; flex: 1 1 200px; text-align: left; background: var(--surface); color: var(--ink); border: 1px solid var(--rule-soft); border-radius: var(--r); padding: 14px 18px; min-height: 64px; font: inherit; transition: border-color .2s var(--ease), background .2s var(--ease); position: relative; }
+.tab:hover { border-color: var(--rule); }
+.tab[aria-selected="true"] { border-color: var(--gold); background: var(--surface-2); }
+.tab .tn { font: 600 22px var(--serif); display: flex; align-items: center; gap: 10px; }
+.tab .sw { width: 12px; height: 12px; border-radius: 50%; }
+.tab .tm { font: 400 13px var(--mono); color: var(--ink-2); }
+.prod-grid { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: var(--gap); }
+@media (max-width: 980px) { .prod-grid { grid-template-columns: 1fr; } }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 14px; font-size: 14px; }
+.facts dt { color: var(--ink-3); }
+.facts dd { margin: 0; }
+.gauge { position: relative; height: 30px; border-radius: 4px; margin: 10px 0 6px; background: linear-gradient(90deg, rgba(236,107,95,.28), rgba(236,107,95,.05) 40%, rgba(242,234,216,.04) 50%, rgba(76,187,127,.05) 60%, rgba(76,187,127,.28)); border: 1px solid var(--rule-soft); }
+.gauge .dz { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(242,234,216,.10) 0 4px, transparent 4px 8px); border-left: 1px dashed var(--ink-3); border-right: 1px dashed var(--ink-3); }
+.gauge .needle { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1.5px; background: var(--gold-hi); border-radius: 2px; box-shadow: 0 0 0 2px var(--surface); transition: left .3s var(--ease); }
+.gauge-scale { display: flex; justify-content: space-between; font: 400 12px var(--mono); color: var(--ink-3); }
+.why { font-size: 14px; color: var(--ink-2); margin: 12px 0 0; }
+
+/* ---------------------------------------------------------------- tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule-soft); border-radius: var(--r); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+caption { text-align: left; padding: 0 0 8px; color: var(--ink-2); font-size: 13px; caption-side: top; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); text-align: left; vertical-align: top; }
+thead th { position: sticky; top: 0; background: var(--surface-2); font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+th button { all: unset; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+th button:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+td.n, th.n { text-align: right; font-family: var(--mono); white-space: nowrap; }
+tbody tr:hover { background: rgba(201,162,39,.04); }
+tr.retained td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+td.reason { min-width: 320px; color: var(--ink-2); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font: 500 12px var(--mono); background: var(--surface-3); white-space: nowrap; }
+.tag.buy { color: var(--up); } .tag.sell { color: var(--down); }
+.pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.btn { appearance: none; border: 1px solid var(--rule); background: var(--surface-2); color: var(--ink); padding: 8px 14px; min-height: 40px; min-width: 44px; border-radius: 4px; cursor: pointer; font: 500 13px var(--sans); transition: border-color .2s var(--ease); }
+.btn:hover:not(:disabled) { border-color: var(--gold); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+ul.limits { margin: 0; padding-left: 20px; color: var(--ink-2); }
+ul.limits li { margin-bottom: 8px; }
+ul.limits b { color: var(--ink); }
+
+footer { border-top: 3px double var(--rule); margin-top: 64px; padding: 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
+footer p { margin: 4px auto; max-width: 80ch; }
+
+@media (max-width: 720px) {
+  header.mast { grid-template-columns: auto 1fr; }
+  .status { grid-column: 1 / -1; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .seal { width: 56px; height: 56px; }
+  .chart-box { height: 280px; }
+  main { padding: 8px 16px 48px; }
+}
+</style>
+</head>
 <body>
-  <h1>Vérification des flux — pas votre tableau de bord</h1>
-  <p>Cette page confirme simplement que vos deux URL de flux renvoient de vraies données. Votre véritable tableau de bord (rendement vs. références, risque/volatilité, signal par produit, journal des décisions) est une chose distincte que vous construisez vous-même — voir ci-dessous.</p>
-  <pre id="out">Chargement...</pre>
+<a class="skip" href="#main">Aller au contenu</a>
+
+<div class="ticker" role="region" aria-label="Cours en direct">
+  <div class="ticker-track" id="ticker"><span class="ticker-item">Chargement des cours…</span></div>
+</div>
+
+<header class="mast">
+  <svg class="seal" viewBox="0 0 80 80" role="img" aria-label="Sceau Lodesthard Capital">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e6c65c"/><stop offset="1" stop-color="#9c7a1c"/></linearGradient></defs>
+    <circle cx="40" cy="40" r="38" fill="#0b0906" stroke="url(#g)" stroke-width="2"/>
+    <circle cx="40" cy="40" r="32" fill="none" stroke="url(#g)" stroke-width=".8" stroke-dasharray="2 3"/>
+    <path d="M18 54 L30 42 L38 48 L52 30 L62 34" fill="none" stroke="url(#g)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/>
+    <text x="40" y="50" text-anchor="middle" font-family="Playfair Display, Georgia, serif" font-size="30" font-weight="700" fill="url(#g)">L</text>
+  </svg>
+  <div>
+    <h1>Lodesthard <span>Capital</span></h1>
+    <p class="sub">Salle des marchés · ENSIM Trade Center · TP2</p>
+  </div>
+  <div class="status" aria-live="polite">
+    <span class="pill"><span class="dot" id="live-dot"></span><span id="live-text">Connexion aux flux…</span></span>
+    <span class="pill" id="gen-text">Signal calculé —</span>
+  </div>
+</header>
+
+<nav class="sections" aria-label="Sections">
+  <ul>
+    <li><a href="#synthese">Synthèse</a></li>
+    <li><a href="#performance">Performance</a></li>
+    <li><a href="#risque">Risque</a></li>
+    <li><a href="#signaux">Signaux</a></li>
+    <li><a href="#journal">Journal</a></li>
+    <li><a href="#methode">Méthode</a></li>
+  </ul>
+</nav>
+
+<main id="main">
+  <div class="banner" id="banner" hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+    <div id="banner-text"></div>
+  </div>
+
+  <!-- ============================================================ SYNTHESE -->
+  <section class="block" id="synthese" aria-labelledby="h-synth">
+    <div class="block-head">
+      <h2 id="h-synth"><span class="num">00</span>Synthèse</h2>
+      <p>Où en est le portefeuille réel, et ce que ferait le signal. Valeur = argent + stocks × dernier prix.</p>
+    </div>
+    <div class="tiles three">
+      <div class="tile"><div class="k">Valeur du portefeuille</div><div class="v gold" id="t-value">—</div><div class="d" id="t-value-d">—</div></div>
+      <div class="tile"><div class="k">Rang au classement</div><div class="v" id="t-rank">—</div><div class="d" id="t-rank-d">—</div></div>
+      <div class="tile"><div class="k">Écart vs « ne rien faire »</div><div class="v" id="t-hold">—</div><div class="d" id="t-hold-d">—</div></div>
+      <div class="tile"><div class="k">Écart vs random_trader</div><div class="v" id="t-rand">—</div><div class="d" id="t-rand-d">—</div></div>
+      <div class="tile"><div class="k">Stratégie simulée</div><div class="v" id="t-sim">—</div><div class="d" id="t-sim-d">—</div></div>
+      <div class="tile"><div class="k">decision.json publié</div>
+        <div class="decision-row" id="t-dec"><span class="chip"><small>A</small>—</span><span class="chip"><small>B</small>—</span><span class="chip"><small>C</small>—</span></div>
+        <div class="d" id="t-dec-d" style="margin-top:8px">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:var(--gap)" aria-labelledby="h-eg">
+      <div class="eg-head">
+        <div>
+          <h3 id="h-eg">Fin de partie</h3>
+          <p class="lede">Clôture mardi 1<sup>er</sup> décembre 2026, 15:00 (Paris). Le score final = argent + stock × dernier prix : l'argent ne rapporte rien, et un achat tardif n'a plus le temps de remonter.</p>
+        </div>
+        <div class="countdown"><span class="k">Temps restant</span><span id="eg-count">—</span><span class="eg-sub" id="eg-ticks">—</span></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Prévision de fin de partie par produit</caption>
+          <thead><tr><th>Produit</th><th class="n">Prix</th><th class="n">Final prévu</th><th class="n">Max restant</th><th class="n">Min restant</th><th class="n">R² modèle</th><th>Règle dans les derniers ticks</th></tr></thead>
+          <tbody id="eg-body"></tbody>
+        </table>
+      </div>
+      <p class="helps" id="eg-help"></p>
+    </div>
+  </section>
+
+  <!-- ========================================================= PERFORMANCE -->
+  <section class="block" id="performance" aria-labelledby="h-perf">
+    <div class="block-head">
+      <h2 id="h-perf"><span class="num">01</span>Performance</h2>
+      <p>KPI 1 — valeur totale au fil du temps, comparée à « ne rien faire » et aux trois traders de référence.</p>
+    </div>
+    <div class="grid-2">
+      <figure class="card" style="margin:0">
+        <div class="toolbar" style="justify-content:space-between">
+          <div><h3>Valeur du portefeuille</h3></div>
+          <div class="seg" role="group" aria-label="Mesure affichée">
+            <button type="button" data-perf="value" aria-pressed="true">Valeur €</button>
+            <button type="button" data-perf="excess" aria-pressed="false">Écart €</button>
+          </div>
+        </div>
+        <p class="lede" id="perf-lede">Stratégie simulée sur l'historique réel, règles d'exécution de l'organisateur.</p>
+        <div class="legend" id="perf-legend"></div>
+        <div class="chart-box tall"><canvas id="c-perf" role="img" aria-label="Valeur du portefeuille simulé et de la stratégie ne rien faire, par tick"></canvas></div>
+        <figcaption class="helps"><b>Décision aidée :</b> garder ou changer le signal. Si la courbe or passe durablement sous « ne rien faire », le signal détruit de la valeur et doit être coupé ou réglé.</figcaption>
+      </figure>
+      <figure class="card" style="margin:0">
+        <h3>Classement en direct</h3>
+        <p class="lede">Valeur totale de chaque trader (flux public de l'organisateur). Références en gris, nous en or.</p>
+        <div class="chart-box tall" id="lb-box"><canvas id="c-lb" role="img" aria-label="Classement des traders par valeur totale"></canvas></div>
+        <figcaption class="helps"><b>Décision aidée :</b> faut-il prendre plus de risque ? Un écart faible avec les références veut dire que notre signal n'apporte encore rien.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================== RISQUE -->
+  <section class="block" id="risque" aria-labelledby="h-risk">
+    <div class="block-head">
+      <h2 id="h-risk"><span class="num">02</span>Risque</h2>
+      <p>KPI 2 — baisse depuis le dernier sommet (drawdown) et volatilité glissante de chaque produit.</p>
+    </div>
+    <div class="tiles" style="margin-bottom:var(--gap)" id="risk-tiles"></div>
+    <div class="grid-2">
+      <figure class="card" style="margin:0">
+        <h3>Drawdown</h3>
+        <p class="lede">Baisse en % depuis le plus haut atteint. 0 % = au sommet.</p>
+        <div class="legend"><span><i style="background:var(--gold)"></i>Stratégie simulée</span><span><i class="dash"></i>Ne rien faire</span></div>
+        <div class="chart-box"><canvas id="c-dd" role="img" aria-label="Drawdown de la stratégie simulée et de ne rien faire"></canvas></div>
+        <figcaption class="helps"><b>Décision aidée :</b> le gain vaut-il le risque ? Un signal qui gagne plus mais creuse plus profond que « ne rien faire » doit être réduit (ordres plus petits).</figcaption>
+      </figure>
+      <figure class="card" style="margin:0">
+        <h3>Volatilité glissante (24 ticks)</h3>
+        <p class="lede">Écart-type des rendements par tick, en %.</p>
+        <div class="legend"><span><i style="background:var(--s-a)"></i>A</span><span><i style="background:var(--s-b)"></i>B</span><span><i style="background:var(--s-c)"></i>C</span></div>
+        <div class="chart-box"><canvas id="c-vol" role="img" aria-label="Volatilité glissante sur 24 ticks des produits A, B et C"></canvas></div>
+        <figcaption class="helps"><b>Décision aidée :</b> sur quel produit limiter la taille des ordres. C bouge environ deux fois plus que A : un même ordre y risque plus.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================= SIGNAUX -->
+  <section class="block" id="signaux" aria-labelledby="h-sig">
+    <div class="block-head">
+      <h2 id="h-sig"><span class="num">03</span>Signal par produit</h2>
+      <p>KPI 3 — prix, indicateur utilisé par le signal, achats et ventes simulés, et indice S avec sa zone morte.</p>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Produit" id="prod-tabs"></div>
+    <div class="prod-grid" role="tabpanel" id="prod-panel" aria-labelledby="">
+      <div class="card">
+        <h3 id="p-title">Produit</h3>
+        <dl class="facts" id="p-facts"></dl>
+        <div class="k" style="font:500 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)">Indice S actuel</div>
+        <div class="gauge" id="p-gauge" role="meter" aria-valuemin="-1" aria-valuemax="1"><div class="dz" id="p-dz"></div><div class="needle" id="p-needle"></div></div>
+        <div class="gauge-scale"><span>−1 vendre</span><span>0</span><span>+1 acheter</span></div>
+        <div class="table-wrap" style="margin-top:16px">
+          <table>
+            <caption class="sr-only">Méthodes du signal et leur valeur actuelle</caption>
+            <thead><tr><th>Méthode</th><th class="n">Poids</th><th class="n">Valeur</th></tr></thead>
+            <tbody id="p-methods"></tbody>
+          </table>
+        </div>
+        <p class="why" id="p-why"></p>
+      </div>
+      <div style="display:grid;gap:var(--gap);min-width:0">
+        <figure class="card" style="margin:0">
+          <h3>Prix et bandes de Bollinger</h3>
+          <div class="legend" id="p-legend"></div>
+          <div class="chart-box tall"><canvas id="c-price" role="img" aria-label="Prix du produit, moyenne mobile, bandes et trades simulés"></canvas></div>
+        </figure>
+        <figure class="card" style="margin:0">
+          <h3>Indice S et zone morte</h3>
+          <div class="legend"><span><i id="s-sw"></i>Indice S</span><span><i class="band"></i>Zone morte (pas de trade)</span></div>
+          <div class="chart-box short"><canvas id="c-s" role="img" aria-label="Indice S du produit et zone morte"></canvas></div>
+          <figcaption class="helps"><b>Décision aidée :</b> acheter, vendre ou attendre. Hors de la bande, on envoie S ÷ 2 (S = 0,8 → 40 unités). Dans la bande, on ne fait rien.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= JOURNAL -->
+  <section class="block" id="journal" aria-labelledby="h-log">
+    <div class="block-head">
+      <h2 id="h-log"><span class="num">04</span>Journal des décisions</h2>
+      <p>KPI 4 — chaque trade, tick par tick, avec la raison calculée par le signal.</p>
+    </div>
+    <div class="card">
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Source du journal">
+          <button type="button" data-src="sim" aria-pressed="true">Simulé</button>
+          <button type="button" data-src="real" aria-pressed="false">Réel</button>
+        </div>
+        <label>Produit
+          <select id="j-prod"><option value="">Tous</option><option>A</option><option>B</option><option>C</option></select>
+        </label>
+        <label>Sens
+          <select id="j-side"><option value="">Achats et ventes</option><option value="buy">Achats</option><option value="sell">Ventes</option><option value="hold">Conserver (réel)</option></select>
+        </label>
+        <span id="j-count" style="margin-left:auto;font-size:13px;color:var(--ink-2)" aria-live="polite"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="j-table">
+          <caption class="sr-only">Journal des décisions</caption>
+          <thead><tr>
+            <th class="n" aria-sort="descending"><button type="button" data-sort="tick">Tick <span aria-hidden="true">▼</span></button></th>
+            <th>Exécution</th><th>Produit</th><th>Sens</th>
+            <th class="n">Unités</th><th class="n">Prix</th><th class="n">S</th><th class="n">Ordre</th><th>Raison</th>
+          </tr></thead>
+          <tbody id="j-body"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn" type="button" id="j-prev" aria-label="Page précédente">‹</button>
+        <span id="j-page">—</span>
+        <button class="btn" type="button" id="j-next" aria-label="Page suivante">›</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= METHODE -->
+  <section class="block" id="methode" aria-labelledby="h-meth">
+    <div class="block-head">
+      <h2 id="h-meth"><span class="num">05</span>Méthode et test sur l'historique</h2>
+      <p>Pourquoi ces méthodes, ces poids et cette zone morte. Historique coupé en deux moitiés : on règle sur l'une, on vérifie sur l'autre.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Cycle détecté par produit</h3>
+        <p class="lede">Autocorrélation du prix sans tendance. Un vrai cycle = pic positif fort à la période et creux négatif fort à la demi-période.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Produit</th><th class="n">Période</th><th class="n">Corr. période</th><th class="n">Corr. ½ période</th><th>Verdict</th></tr></thead>
+          <tbody id="m-cycle"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h3>Référence : random_trader</h3>
+        <p class="lede">Gain moyen par rapport à « ne rien faire » de 300 tirages d'ordres au hasard dans [−1, +1], mêmes règles d'exécution.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Moitié</th><th class="n">A</th><th class="n">B</th><th class="n">C</th></tr></thead>
+          <tbody id="m-rand"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:var(--gap)">
+      <h3>Chaque méthode seule, sans zone morte</h3>
+      <p class="lede">Gain par rapport à « ne rien faire », en €, sur chaque moitié de l'historique. Lignes dorées = méthodes de la famille retenue (retour à la moyenne).</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Méthode</th><th>Famille</th><th class="n">A 1re</th><th class="n">A 2e</th><th class="n">B 1re</th><th class="n">B 2e</th><th class="n">C 1re</th><th class="n">C 2e</th></tr></thead>
+        <tbody id="m-methods"></tbody>
+      </table></div>
+    </div>
+
+    <div class="grid-2" style="margin-top:var(--gap)">
+      <figure class="card" style="margin:0">
+        <h3>Choix de la zone morte</h3>
+        <p class="lede">Gain total (A + B + C) de la configuration retenue selon la zone morte, sur chaque moitié.</p>
+        <div class="legend"><span><i style="background:var(--gold)"></i>1re moitié</span><span><i style="background:var(--s-b)"></i>2e moitié</span></div>
+        <div class="chart-box"><canvas id="c-dz" role="img" aria-label="Gain total selon la zone morte, par moitié d'historique"></canvas></div>
+        <figcaption class="helps" id="dz-help"></figcaption>
+      </figure>
+      <figure class="card" style="margin:0">
+        <h3>Nombre de trades selon la zone morte</h3>
+        <p class="lede">Trades exécutés sur la 2e moitié. Moins de trades = moins d'impact de nos propres ordres sur le prix.</p>
+        <div class="chart-box"><canvas id="c-dzt" role="img" aria-label="Nombre de trades selon la zone morte"></canvas></div>
+      </figure>
+    </div>
+
+    <figure class="card" style="margin:var(--gap) 0 0">
+      <h3>Test de la règle de fin de partie</h3>
+      <p class="lede">On fait comme si la partie s'arrêtait à différents ticks passés : gain ajouté par la règle (12 derniers ticks) par rapport à la stratégie normale, A + B + C.</p>
+      <div class="legend"><span><i style="background:var(--up)"></i>Règle gagnante</span><span><i style="background:var(--down)"></i>Règle perdante</span></div>
+      <div class="chart-box"><canvas id="c-eg" role="img" aria-label="Gain ajouté par la règle de fin de partie selon le tick de fin simulé"></canvas></div>
+      <figcaption class="helps"><b>Pourquoi symétrique :</b> la 1re version bloquait tous les achats et perdait quand la fin tombait pendant une remontée (moyenne +165 €, 14 cas positifs sur 24). En achetant aussi près du creux quand le prix final prévu est plus haut, elle gagne dans presque tous les cas.</figcaption>
+    </figure>
+
+    <div class="card" style="margin-top:var(--gap)">
+      <h3>Limites à garder en tête</h3>
+      <ul class="limits">
+        <li><b>Pas d'impact simulé.</b> Le moteur du marché ajoute la demande moyenne de tous les traders au prix : nos achats font monter le prix au tick suivant. Le test ne le prend pas en compte, le gain réel sera un peu plus faible.</li>
+        <li><b>Test pas totalement hors échantillon.</b> Les périodes de cycle (48 et 24 ticks) ont été mesurées sur tout l'historique. Les deux moitiés donnent des résultats cohérents, mais ce n'est pas une preuve stricte.</li>
+        <li><b>Fenêtres non optimisées.</b> Une fenêtre de 36 ticks ferait mieux sur A, mais on garde 48 parce que c'est la période du cycle. Choisir la fenêtre qui gagne le plus reviendrait à coller au passé.</li>
+        <li><b>Fin de partie : nombre de ticks estimé.</b> Le marché avance à un rythme irrégulier (un tick toutes les 3 à 12 h). Le nombre de ticks restants est estimé sur les 72 dernières heures ; le test montre qu'une erreur de 4 ticks réduit le gain sans le rendre négatif en moyenne.</li>
+        <li><b>B volontairement inactif.</b> Toutes les méthodes testées perdent sur B. Seule une variante « achat seulement » gagne un peu (+328 € / +224 €, 6 trades) : option pour plus tard.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>Lodesthard Capital est un nom de façade pour un projet de cours (ENSIM, informatique décisionnelle). Aucun argent réel.</p>
+  <p>Flux en direct : <a href="https://github.com/exofri/ensim-trade-center">exofri/ensim-trade-center</a> (marché, avoirs, classement) et <a href="https://github.com/Lodesthard/ensim-trader-lodesthard/blob/main/decision.json">decision.json</a>. Signal et test : <code>scripts/signals.py</code>, <code>scripts/backtest.py</code>, données générées par <code>scripts/build_dashboard.py</code>.</p>
+  <p id="foot-gen"></p>
+</footer>
+
+<script src="data/dashboard_data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json";
-const HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json";
-Promise.all([fetch(MARKET_URL).then(r => r.json()), fetch(HOLDINGS_URL).then(r => r.json())])
-  .then(([market, holdings]) => {
-    document.getElementById('out').textContent =
-      'MARKET:\n' + JSON.stringify(market, null, 2) + '\n\nHOLDINGS:\n' + JSON.stringify(holdings, null, 2);
-  })
-  .catch(err => { document.getElementById('out').textContent = 'Impossible de charger les données : ' + err; });
+"use strict";
+const ME = "lodesthard";
+const FEEDS = {
+  market: "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json",
+  holdings: "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json",
+  leaderboard: "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/leaderboard.json",
+  decision: "https://raw.githubusercontent.com/Lodesthard/ensim-trader-lodesthard/main/decision.json",
+};
+const D = window.DASH;
+const css = getComputedStyle(document.documentElement);
+const C = name => css.getPropertyValue(name).trim();
+const COL = { A: C("--s-a"), B: C("--s-b"), C: C("--s-c"), gold: C("--gold"), goldHi: C("--gold-hi"),
+  hold: C("--s-hold"), up: C("--up"), down: C("--down"), ink: C("--ink"), ink2: C("--ink-2"), ink3: C("--ink-3"),
+  grid: C("--grid"), surface: C("--surface"), blue: C("--s-b") };
+const $ = id => document.getElementById(id);
+const nf = (d = 0) => new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const eur = (x, d = 0) => x == null || isNaN(x) ? "—" : nf(d).format(x) + " €";
+const sgn = (x, d = 0, unit = " €") => x == null || isNaN(x) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + nf(d).format(Math.abs(x)) + unit;
+const arrow = x => x > 0.0001 ? '<span class="up">▲</span>' : x < -0.0001 ? '<span class="down">▼</span>' : '<span class="flat">■</span>';
+const cls = x => x > 0.0001 ? "up" : x < -0.0001 ? "down" : "flat";
+const fmtTs = ts => { if (!ts) return "—"; const d = new Date(ts); return d.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+if (!D) {
+  document.getElementById("main").insertAdjacentHTML("afterbegin",
+    '<div class="banner"><div>Données du signal introuvables (<code>docs/data/dashboard_data.js</code>). Lancer <code>python scripts/build_dashboard.py</code>.</div></div>');
+}
+
+/* ------------------------------------------------------------ Chart defaults */
+const HAS_CHART = typeof Chart !== "undefined";
+if (HAS_CHART) {
+  Chart.defaults.color = COL.ink2;
+  Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+  Chart.defaults.font.size = 12;
+  Chart.defaults.borderColor = COL.grid;
+  Chart.defaults.animation = reduced ? false : { duration: 300 };
+  Chart.defaults.plugins.legend.display = false;
+  Object.assign(Chart.defaults.plugins.tooltip, {
+    backgroundColor: "#070604", borderColor: "rgba(201,162,39,.45)", borderWidth: 1, padding: 10,
+    titleColor: COL.goldHi, bodyColor: COL.ink, titleFont: { family: "IBM Plex Mono", weight: "500" },
+    bodyFont: { family: "IBM Plex Mono" }, boxPadding: 4, usePointStyle: true,
+  });
+}
+const tickIdx = {};
+if (D) D.ticks.forEach((t, i) => tickIdx[t] = i);
+const tsOfTick = t => D && tickIdx[t] != null ? fmtTs(D.timestamps[tickIdx[t]]) : "";
+const charts = {};
+function chart(id, cfg) {
+  if (!HAS_CHART) { const c = $(id); if (c) c.parentElement.innerHTML = '<div class="empty">Graphique indisponible (bibliothèque Chart.js non chargée — connexion requise).</div>'; return null; }
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), cfg);
+  return charts[id];
+}
+const linearX = (title) => ({ type: "linear", title: { display: !!title, text: title, color: COL.ink3 },
+  grid: { color: COL.grid, drawTicks: false }, ticks: { maxTicksLimit: 8, padding: 6 }, border: { display: false } });
+const valueY = (cb) => ({ grid: { color: COL.grid, drawTicks: false }, border: { display: false },
+  ticks: { padding: 8, maxTicksLimit: 6, callback: cb } });
+/* vertical reference lines plugin: options.plugins.vlines = [{x, label, color}] */
+const vlines = { id: "vlines", afterDatasetsDraw(c, _a, opts) {
+  if (!opts || !opts.lines) return;
+  const { ctx, chartArea: a, scales: { x } } = c;
+  ctx.save();
+  opts.lines.forEach(l => {
+    const px = x.getPixelForValue(l.x);
+    ctx.strokeStyle = l.color; ctx.setLineDash(l.dash || [4, 4]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = l.color; ctx.font = "500 11px IBM Plex Mono"; ctx.textAlign = "left";
+    ctx.fillText(l.label, Math.min(px + 5, a.right - 80), a.top + 12);
+  });
+  ctx.restore();
+} };
+if (HAS_CHART) Chart.register(vlines);
+
+/* ------------------------------------------------------------ live state */
+const live = { market: null, holdings: null, leaderboard: null, decision: null };
+function lastPrices() {
+  if (live.market) { const h = live.market.history; return { last: h[h.length - 1], prev: h[h.length - 2] }; }
+  if (D) { const n = D.ticks.length - 1; const o = i => Object.fromEntries([["t", D.ticks[i]], ...D.products.map(p => [p, D.prices[p][i]])]); return { last: o(n), prev: o(n - 1) }; }
+  return null;
+}
+const products = D ? D.products : ["A", "B", "C"];
+function portfolioValue(h, px) { return h.money + products.reduce((s, p) => s + h.products[p] * px[p], 0); }
+const holdValue = px => 1000 + products.reduce((s, p) => s + 1000 * px[p], 0);
+
+/* ------------------------------------------------------------ ticker */
+function renderTicker() {
+  const lp = lastPrices(); if (!lp) return;
+  const items = products.map(p => {
+    const ch = 100 * (lp.last[p] / lp.prev[p] - 1);
+    return `<span class="ticker-item"><b>${p}</b>${nf(4).format(lp.last[p])} € <span class="${cls(ch)}">${ch >= 0 ? "▲" : "▼"} ${nf(2).format(Math.abs(ch))} %</span></span>`;
+  });
+  items.push(`<span class="ticker-item"><b>TICK</b>${lp.last.t}</span>`);
+  if (live.holdings) items.push(`<span class="ticker-item"><b>${ME.toUpperCase()}</b>${eur(portfolioValue(live.holdings, lp.last))}</span>`);
+  if (live.leaderboard) {
+    const lb = live.leaderboard.leaderboard;
+    const r = lb.findIndex(x => x.id === ME);
+    if (r >= 0) items.push(`<span class="ticker-item"><b>RANG</b>${r + 1} / ${lb.length}</span>`);
+    lb.filter(x => x.baseline).forEach(x => items.push(`<span class="ticker-item"><b>${x.id}</b>${eur(x.total_value)}</span>`));
+  }
+  if (D) products.forEach(p => { const s = D.current[p].S; items.push(`<span class="ticker-item"><b>SIGNAL ${p}</b><span class="${cls(s)}">${sgn(s, 2, "")}</span></span>`); });
+  const html = items.join("");
+  $("ticker").innerHTML = html + `<span class="ticker-dup" aria-hidden="true">${html}</span>`;
+}
+
+/* ------------------------------------------------------------ synthese */
+function renderTiles() {
+  const lp = lastPrices();
+  if (D) {
+    const s = D.sim, n = s.strategy.length - 1, ex = s.strategy[n] - s.hold[n];
+    $("t-sim").innerHTML = `${arrow(ex)} ${sgn(ex)}`;
+    $("t-sim").className = "v " + cls(ex);
+    $("t-sim-d").innerHTML = `vs « ne rien faire », ticks ${s.ticks[0]}–${s.ticks[n]} (<strong>${sgn(100 * ex / s.hold[n], 1, " %")}</strong>), ${s.trades.length} trades simulés`;
+    $("gen-text").textContent = `Signal calculé au tick ${D.ticks[D.ticks.length - 1]}`;
+    $("foot-gen").textContent = `Données du signal générées le ${new Date(D.generated_at).toLocaleString("fr-FR")} (marché du ${new Date(D.market_generated_at).toLocaleString("fr-FR")}).`;
+  }
+  if (live.holdings && lp) {
+    const v = portfolioValue(live.holdings, lp.last), start = D ? holdValue(Object.fromEntries(products.map(p => [p, D.prices[p][0]]))) : null;
+    $("t-value").textContent = eur(v);
+    $("t-value-d").innerHTML = `${eur(live.holdings.money)} d'argent · ${products.map(p => `${nf(0).format(live.holdings.products[p])} ${p}`).join(" · ")}` +
+      (start ? `<br>${arrow(v - start)} ${sgn(v - start)} depuis le tick 1` : "");
+    const hv = holdValue(lp.last), dh = v - hv;
+    $("t-hold").innerHTML = `${arrow(dh)} ${sgn(dh)}`; $("t-hold").className = "v " + cls(dh);
+    $("t-hold-d").textContent = Math.abs(dh) < 0.5 ? "Aucun trade réel pour l'instant : on est exactement sur « ne rien faire »." : `Valeur « ne rien faire » : ${eur(hv)}`;
+  }
+  if (live.leaderboard) {
+    const lb = live.leaderboard.leaderboard, r = lb.findIndex(x => x.id === ME);
+    if (r >= 0) {
+      $("t-rank").innerHTML = `${r + 1}<span style="font-size:.55em;color:var(--ink-3)"> / ${lb.length}</span>`;
+      $("t-rank-d").innerHTML = `${sgn(lb[r].total_value - lb[0].total_value)} vs le premier (${esc(lb[0].name)})`;
+      const rt = lb.find(x => x.id === "random_trader");
+      if (rt) {
+        const d = lb[r].total_value - rt.total_value;
+        $("t-rand").innerHTML = `${arrow(d)} ${sgn(d)}`; $("t-rand").className = "v " + cls(d);
+        $("t-rand-d").textContent = `random_trader : ${eur(rt.total_value)} · random_buyer : ${eur((lb.find(x => x.id === "random_buyer") || {}).total_value)} · random_seller : ${eur((lb.find(x => x.id === "random_seller") || {}).total_value)}`;
+      }
+    }
+  }
+  if (live.decision) {
+    const dec = live.decision;
+    $("t-dec").innerHTML = products.map(p => { const v = +dec[p] || 0; return `<span class="chip ${cls(v)}"><small>${p}</small>${sgn(v, 2, "")}</span>`; }).join("");
+    const rec = D ? products.map(p => `${p} ${sgn(D.current[p].order, 2, "")}`).join(" · ") : "";
+    $("t-dec-d").innerHTML = `Mis à jour ${fmtTs(dec.updated_at)}${rec ? `<br>Signal recommandé : ${rec}` : ""}`;
+    const allZero = products.every(p => !+dec[p]);
+    if (allZero) {
+      $("banner").hidden = false;
+      $("banner-text").innerHTML = "<strong>Le signal n'est pas encore branché.</strong> <code>decision.json</code> envoie 0 sur les trois produits : le portefeuille réel ne trade pas. Les courbes « stratégie » et le journal « simulé » montrent ce que le signal aurait fait sur l'historique réel.";
+    }
+  }
+}
+
+/* ------------------------------------------------------------ endgame */
+function renderEndgame() {
+  if (!D || !D.endgame) return;
+  const E = D.endgame, end = new Date(E.end_utc), now = new Date();
+  const hLeft = Math.max(0, (end - now) / 36e5);
+  const ticksLeft = hLeft / E.hours_per_tick;
+  const d = Math.floor(hLeft / 24), h = Math.floor(hLeft % 24), m = Math.floor((hLeft * 60) % 60);
+  $("eg-count").textContent = hLeft <= 0 ? "Partie terminée" : `${d} j ${h} h ${String(m).padStart(2, "0")} min`;
+  const active = ticksLeft <= E.endgame_ticks;
+  const startsIn = Math.max(0, hLeft - E.endgame_ticks * E.hours_per_tick);
+  $("eg-ticks").innerHTML = `≈ ${nf(0).format(ticksLeft)} ticks (1 tick / ${nf(1).format(E.hours_per_tick)} h sur 72 h) · ` +
+    (active ? '<span class="phase on">Règle de fin active</span>' : `<span class="phase">Règle active dans ≈ ${nf(0).format(startsIn)} h</span>`);
+  const lp = lastPrices();
+  const RULE = {
+    A: "Vendre près du sommet restant si prix > final prévu ; acheter près du creux restant si prix < final prévu ; sinon attendre.",
+    B: `Conservé. Dans les ${E.park_ticks} derniers ticks, l'argent inutilisé est placé en B (≤ 30 u. par tick).`,
+    C: "Même règle que A, cycle de 24 ticks.",
+  };
+  $("eg-body").innerHTML = products.map(p => {
+    const f = E.products[p].forecast, px = lp ? lp.last[p] : null;
+    const gap = f && px ? 100 * (px / f.final - 1) : null;
+    return `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${COL[p]};margin-right:6px"></span>${p}</td>
+      <td class="n">${px ? nf(4).format(px) : "—"}</td>
+      <td class="n">${f ? nf(4).format(f.final) + (gap != null ? ` <small class="${cls(-gap)}">(${sgn(-gap, 1, " %")})</small>` : "") : "—"}</td>
+      <td class="n">${f ? nf(4).format(f.best_ahead) : "—"}</td><td class="n">${f ? nf(4).format(f.worst_ahead) : "—"}</td>
+      <td class="n">${f ? nf(3).format(f.r2) : "<small>modèle non fiable</small>"}</td><td>${RULE[p] || ""}</td></tr>`;
+  }).join("");
+  const T = E.test, mean = k => avg(T.map(r => products.reduce((s, p) => s + r[k][p], 0)));
+  const pos = k => T.filter(r => products.reduce((s, p) => s + r[k][p], 0) > 0).length;
+  $("eg-help").innerHTML = `<b>Décision aidée :</b> quand arrêter d'acheter et quand vendre. Testée sur ${T.length} fins fictives dans l'historique, la règle ajoute en moyenne <b>${sgn(mean("err0"))}</b> (${pos("err0")}/${T.length} cas positifs), ` +
+    `${sgn(mean("err-4"))} si on sous-estime de 4 le nombre de ticks restants, ${sgn(mean("err4"))} si on le surestime de 4. Détail dans la section Méthode.`;
+}
+
+/* ------------------------------------------------------------ performance */
+let perfMode = "value";
+function logSeries(col) {
+  if (!D || !D.log.length) return [];
+  return D.log.filter(r => r[col] !== undefined && r[col] !== "").map(r => ({ x: +r.tick, y: +r[col] }));
+}
+function renderPerf() {
+  if (!D) return;
+  const s = D.sim;
+  const strat = s.ticks.map((t, i) => ({ x: t, y: perfMode === "value" ? s.strategy[i] : s.strategy[i] - s.hold[i] }));
+  const hold = s.ticks.map((t, i) => ({ x: t, y: perfMode === "value" ? s.hold[i] : 0 }));
+  const ds = [
+    { label: "Stratégie simulée", data: strat, borderColor: COL.gold, backgroundColor: COL.gold, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0 },
+    { label: "Ne rien faire", data: hold, borderColor: COL.hold, backgroundColor: COL.hold, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4 },
+  ];
+  const legend = [`<span><i style="background:var(--gold)"></i>Stratégie simulée</span>`, `<span><i class="dash"></i>Ne rien faire</span>`];
+  const real = logSeries("total_value");
+  if (real.length) {
+    ds.push({ label: "Réel (journal)", data: perfMode === "value" ? real : real.map(p => ({ x: p.x, y: p.y - (s.hold[s.ticks.indexOf(p.x)] ?? p.y) })), borderColor: COL.up, backgroundColor: COL.up, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5 });
+    legend.push(`<span><i style="background:var(--up)"></i>Réel (journal)</span>`);
+    [["random_trader", COL.blue], ["random_buyer", COL.C], ["random_seller", COL.ink3]].forEach(([k, c]) => {
+      const ser = logSeries(k); if (!ser.length || perfMode !== "value") return;
+      ds.push({ label: k, data: ser, borderColor: c, backgroundColor: c, borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
+      legend.push(`<span><i style="background:${c}"></i>${k}</span>`);
+    });
+    $("perf-lede").textContent = "Stratégie simulée sur l'historique, valeur réelle relevée à chaque exécution, et traders de référence.";
+  } else if (live.holdings && perfMode === "value") {
+    const lp = lastPrices();
+    ds.push({ label: "Réel (dernier relevé)", data: [{ x: lp.last.t, y: portfolioValue(live.holdings, lp.last) }], borderColor: COL.surface, backgroundColor: COL.up, borderWidth: 2, pointRadius: 7, pointHoverRadius: 9, pointStyle: "rectRot", showLine: false });
+    legend.push(`<span><i style="background:var(--up);width:10px;height:10px;transform:rotate(45deg)"></i>Réel (dernier relevé)</span>`);
+    $("perf-lede").textContent = "Stratégie simulée sur l'historique réel. Le journal réel (docs/data/log.csv) ajoutera la valeur réelle et les références au fil des ticks.";
+  }
+  $("perf-legend").innerHTML = legend.join("");
+  chart("c-perf", { type: "line", data: { datasets: ds }, options: {
+    responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
+    interaction: { mode: "nearest", axis: "x", intersect: false },
+    scales: { x: linearX("Tick"), y: valueY(v => nf(0).format(v) + " €") },
+    plugins: { tooltip: { callbacks: { title: it => `Tick ${it[0].parsed.x} · ${tsOfTick(it[0].parsed.x)}`, label: it => ` ${it.dataset.label} : ${perfMode === "value" ? eur(it.parsed.y) : sgn(it.parsed.y)}` } } },
+  } });
+}
+let liveDone = false;
+function renderLeaderboard() {
+  if (!live.leaderboard) {
+    $("lb-box").innerHTML = liveDone
+      ? '<div class="empty">Classement indisponible : flux de l\'organisateur injoignable.<br>Réessayer en rechargeant la page.</div>'
+      : '<div class="empty">Chargement du classement…</div>';
+    return;
+  }
+  if (!$("c-lb")) $("lb-box").innerHTML = '<canvas id="c-lb" role="img" aria-label="Classement des traders par valeur totale"></canvas>';
+  const lb = live.leaderboard.leaderboard;
+  const lbl = lb.map((x, i) => `${i + 1}. ${x.id === ME ? "▶ " : ""}${x.name}${x.baseline ? " (réf.)" : ""}`);
+  const colors = lb.map(x => x.id === ME ? COL.gold : x.baseline ? "rgba(166,157,138,.45)" : "rgba(74,138,212,.55)");
+  $("lb-box").style.height = Math.max(380, lb.length * 26 + 40) + "px";
+  const min = Math.min(...lb.map(x => x.total_value));
+  chart("c-lb", { type: "bar", data: { labels: lbl, datasets: [{ data: lb.map(x => x.total_value), backgroundColor: colors, borderColor: COL.surface, borderWidth: { top: 2, bottom: 2 }, borderRadius: 4, borderSkipped: "start", barPercentage: .82, categoryPercentage: 1 }] },
+    options: { indexAxis: "y", responsive: true, maintainAspectRatio: false,
+      scales: { x: { ...valueY(v => nf(0).format(v / 1000) + " k€"), min: Math.floor(min * 0.95 / 1000) * 1000 },
+        y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false, color: c => lb[c.index] && lb[c.index].id === ME ? COL.goldHi : COL.ink2, font: c => ({ weight: lb[c.index] && lb[c.index].id === ME ? "600" : "400", size: 12 }) } } },
+      plugins: { tooltip: { callbacks: { label: it => ` ${eur(it.parsed.x, 2)}` } } } } });
+}
+
+/* ------------------------------------------------------------ risk */
+function renderRisk() {
+  if (!D) return;
+  const s = D.sim, minS = Math.min(...s.dd_strategy), minH = Math.min(...s.dd_hold);
+  const n = D.ticks.length - 1;
+  const tiles = [
+    ["Drawdown max · stratégie", `${nf(1).format(minS)} %`, `Pire baisse depuis un sommet, ticks ${s.ticks[0]}–${s.ticks[s.ticks.length - 1]}`],
+    ["Drawdown max · ne rien faire", `${nf(1).format(minH)} %`, minS > minH ? "La stratégie creuse <strong>moins</strong> que « ne rien faire »." : "La stratégie creuse <strong>plus</strong> que « ne rien faire »."],
+    ...products.map(p => [`Volatilité ${p} · 24 ticks`, `${nf(2).format(D.vol24[p][n])} %`, `Moyenne sur l'historique : ${nf(2).format(avg(D.vol24[p].filter(v => v != null)))} % par tick`]),
+  ];
+  $("risk-tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  const pts = arr => s.ticks.map((t, i) => ({ x: t, y: arr[i] }));
+  chart("c-dd", { type: "line", data: { datasets: [
+    { label: "Stratégie simulée", data: pts(s.dd_strategy), borderColor: COL.gold, backgroundColor: "rgba(201,162,39,.12)", fill: "origin", borderWidth: 2, pointRadius: 0 },
+    { label: "Ne rien faire", data: pts(s.dd_hold), borderColor: COL.hold, borderDash: [6, 4], borderWidth: 2, pointRadius: 0 },
+  ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
+    scales: { x: linearX("Tick"), y: { ...valueY(v => nf(0).format(v) + " %"), max: 0 } },
+    plugins: { tooltip: { callbacks: { title: it => `Tick ${it[0].parsed.x}`, label: it => ` ${it.dataset.label} : ${nf(2).format(it.parsed.y)} %` } } } } });
+  chart("c-vol", { type: "line", data: { datasets: products.map(p => ({ label: p, data: D.ticks.map((t, i) => ({ x: t, y: D.vol24[p][i] })).filter(q => q.y != null), borderColor: COL[p], backgroundColor: COL[p], borderWidth: 2, pointRadius: 0 })) },
+    options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
+      scales: { x: linearX("Tick"), y: valueY(v => nf(1).format(v) + " %") },
+      plugins: { tooltip: { callbacks: { title: it => `Tick ${it[0].parsed.x}`, label: it => ` ${it.dataset.label} : ${nf(2).format(it.parsed.y)} %` } } } } });
+}
+const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+
+/* ------------------------------------------------------------ product signal */
+let curProd = "A";
+const FAMILY_FR = { mean_reversion: "Retour à la moyenne", trend: "Suivi de tendance", none: "Aucune (on conserve)" };
+function renderTabs() {
+  $("prod-tabs").innerHTML = products.map(p => {
+    const c = D.current[p], lp = lastPrices();
+    return `<button class="tab" role="tab" id="tab-${p}" aria-controls="prod-panel" aria-selected="${p === curProd}" tabindex="${p === curProd ? 0 : -1}" data-p="${p}">
+      <span class="tn"><span class="sw" style="background:${COL[p]}"></span>Produit ${p}</span>
+      <span class="tm">${lp ? nf(4).format(lp.last[p]) + " €" : ""} · S ${sgn(c.S, 2, "")} · ${FAMILY_FR[c.family]}</span></button>`;
+  }).join("");
+  $("prod-tabs").querySelectorAll(".tab").forEach(b => {
+    b.addEventListener("click", () => { curProd = b.dataset.p; renderTabs(); renderProduct(); $("tab-" + curProd).focus(); });
+    b.addEventListener("keydown", e => {
+      const i = products.indexOf(curProd);
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault(); curProd = products[(i + (e.key === "ArrowRight" ? 1 : products.length - 1)) % products.length];
+        renderTabs(); renderProduct(); $("tab-" + curProd).focus();
+      }
+    });
+  });
+  $("prod-panel").setAttribute("aria-labelledby", "tab-" + curProd);
+}
+function renderProduct() {
+  const p = curProd, c = D.current[p], ind = D.indicators[p], dz = D.dead_zone;
+  const trades = D.sim.trades.filter(t => t.p === p);
+  const buys = trades.filter(t => t.units > 0), sells = trades.filter(t => t.units < 0);
+  const gain = products.length ? (D.backtest.sweep.find(r => Math.abs(r.dz - dz) < 1e-9) || {}) : {};
+  $("p-title").innerHTML = `<span class="sw" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${COL[p]};margin-right:8px"></span>Produit ${p}`;
+  const per = c.cycle;
+  $("p-facts").innerHTML = `
+    <dt>Famille</dt><dd>${FAMILY_FR[c.family]}</dd>
+    <dt>Cycle</dt><dd>${per.is_cycle ? `${per.peak} ticks` : "aucun cycle net"}</dd>
+    <dt>Ordre actuel</dt><dd class="${cls(c.order)}">${c.order === 0 ? "Conserver (dans la zone morte)" : `${c.order > 0 ? "▲ Acheter" : "▼ Vendre"} ${nf(0).format(Math.abs(c.order) * 100)} u. (${sgn(c.order, 2, "")})`}</dd>
+    <dt>Trades simulés</dt><dd>${buys.length} achats · ${sells.length} ventes</dd>
+    ${gain.H2 ? `<dt>Gain 2e moitié</dt><dd class="${cls(gain.H2.by[p])}">${arrow(gain.H2.by[p])} ${sgn(gain.H2.by[p])}</dd>` : ""}`;
+  const pos = v => 50 + 50 * Math.max(-1, Math.min(1, v));
+  $("p-dz").style.left = pos(-dz) + "%"; $("p-dz").style.width = (pos(dz) - pos(-dz)) + "%";
+  $("p-needle").style.left = pos(c.S) + "%";
+  $("p-gauge").setAttribute("aria-valuenow", c.S);
+  $("p-gauge").setAttribute("aria-label", `Indice S de ${p} : ${nf(2).format(c.S)}, zone morte ±${nf(2).format(dz)}`);
+  $("p-methods").innerHTML = c.methods.length ? c.methods.map(m => `<tr class="${m.weight > 0 ? "retained" : ""}"><td>${esc(m.label)}${Object.keys(m.params).length ? `<br><small style="color:var(--ink-3);font-family:var(--mono)">${Object.entries(m.params).map(([k, v]) => `${k}=${v}`).join(" ")}</small>` : ""}</td><td class="n">${m.weight}</td><td class="n ${m.weight ? cls(m.value) : "flat"}">${m.weight ? sgn(m.value, 2, "") : "exclue"}</td></tr>`).join("")
+    : `<tr><td colspan="3" style="color:var(--ink-3)">Aucune méthode : poids 0 partout, S = 0, on conserve le stock.</td></tr>`;
+  $("p-why").textContent = c.why;
+
+  const P = D.prices[p];
+  const xy = arr => D.ticks.map((t, i) => ({ x: t, y: arr[i] })).filter(q => q.y != null);
+  const eg = D.endgame && D.endgame.products[p];
+  const curve = eg && eg.curve.length ? eg.curve.map(([x, y]) => ({ x, y })) : [];
+  $("p-legend").innerHTML = `<span><i style="background:${COL[p]}"></i>Prix ${p}</span><span><i style="background:var(--ink-2)"></i>Moyenne ${ind.window} ticks</span><span><i class="band"></i>± 2 écarts-types</span><span><i class="tri-up"></i>Achat simulé</span><span><i class="tri-down"></i>Vente simulée</span>` +
+    (curve.length ? `<span><i style="background:repeating-linear-gradient(90deg,var(--gold-hi) 0 3px,transparent 3px 6px)"></i>Prévision fin de partie</span>` : "");
+  const tradeTip = t => [` ${t.units > 0 ? "Achat" : "Vente"} ${nf(0).format(Math.abs(t.units))} u. à ${nf(4).format(t.price)} €`, ` S = ${sgn(t.S, 2, "")} → ordre ${sgn(t.order, 2, "")}`];
+  chart("c-price", { type: "line", data: { datasets: [
+    { label: "Bande haute", data: xy(ind.upper), borderColor: "rgba(242,234,216,.25)", borderWidth: 1, pointRadius: 0, fill: "+1", backgroundColor: "rgba(242,234,216,.06)" },
+    { label: "Bande basse", data: xy(ind.lower), borderColor: "rgba(242,234,216,.25)", borderWidth: 1, pointRadius: 0 },
+    { label: `Moyenne ${ind.window}`, data: xy(ind.ma), borderColor: COL.ink2, borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0 },
+    { label: `Prix ${p}`, data: xy(P), borderColor: COL[p], backgroundColor: COL[p], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+    { label: "Achat", type: "scatter", data: buys.map(t => ({ x: t.tick, y: t.price, t })), pointStyle: "triangle", radius: 6, hoverRadius: 8, backgroundColor: COL.up, borderColor: COL.surface, borderWidth: 1.5 },
+    { label: "Vente", type: "scatter", data: sells.map(t => ({ x: t.tick, y: t.price, t })), pointStyle: "triangle", rotation: 180, radius: 6, hoverRadius: 8, backgroundColor: COL.down, borderColor: COL.surface, borderWidth: 1.5 },
+    ...(curve.length ? [{ label: "Prévision", data: curve, borderColor: COL.goldHi, borderDash: [3, 3], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }] : []),
+  ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "xy", intersect: false },
+    scales: { x: linearX("Tick"), y: valueY(v => nf(2).format(v) + " €") },
+    plugins: { vlines: { lines: eg && eg.forecast ? [{ x: eg.forecast.t_end, label: "fin estimée", color: COL.goldHi }] : [] }, tooltip: { filter: it => !it.dataset.label.startsWith("Bande"),
+      callbacks: { title: it => `Tick ${it[0].parsed.x} · ${tsOfTick(it[0].parsed.x)}`,
+        label: it => it.raw.t ? tradeTip(it.raw.t) : ` ${it.dataset.label} : ${nf(4).format(it.parsed.y)} €` } } } } });
+
+  const Sx = xy(D.S[p]).filter(q => q.x > D.ticks[47]);
+  const x0 = Sx.length ? Sx[0].x : 0, x1 = D.ticks[D.ticks.length - 1];
+  $("s-sw").style.background = COL[p];
+  chart("c-s", { type: "line", data: { datasets: [
+    { label: "+zone", data: [{ x: x0, y: dz }, { x: x1, y: dz }], borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0, fill: "+1", backgroundColor: "rgba(242,234,216,.08)" },
+    { label: "−zone", data: [{ x: x0, y: -dz }, { x: x1, y: -dz }], borderColor: "rgba(242,234,216,.35)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+    { label: "Indice S", data: Sx, borderColor: COL[p], backgroundColor: COL[p], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+  ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
+    scales: { x: linearX("Tick"), y: { ...valueY(v => nf(1).format(v)), min: -1, max: 1 } },
+    plugins: { tooltip: { filter: it => it.dataset.label === "Indice S", callbacks: { title: it => `Tick ${it[0].parsed.x}`,
+      label: it => { const v = it.parsed.y; return ` S = ${sgn(v, 2, "")} → ${Math.abs(v) < dz ? "conserver" : (v > 0 ? "acheter " : "vendre ") + nf(0).format(Math.abs(v) * 50) + " u."}`; } } } } } });
+}
+
+/* ------------------------------------------------------------ journal */
+const J = { src: "sim", prod: "", side: "", page: 0, size: 20, dir: -1 };
+function journalRows() {
+  if (!D) return [];
+  if (J.src === "sim") return D.sim.trades.map(t => ({ ...t, sim: true }));
+  const rows = [];
+  D.log.forEach(r => products.forEach(p => {
+    const o = +r["order_" + p] || 0;
+    rows.push({ tick: +r.tick, ts: r.timestamp, p, units: 100 * o, price: +r["price_" + p], S: +r["S_" + p], order: o,
+      reason: (r.phase === "fin" ? "[fin] " : "") + (r["reason_" + p] || r.reason || "") });
+  }));
+  return rows;
+}
+function renderJournal() {
+  let rows = journalRows().filter(r => (!J.prod || r.p === J.prod) && (!J.side || (J.side === "buy" ? r.units > 0 : J.side === "sell" ? r.units < 0 : r.units === 0)));
+  rows.sort((a, b) => J.dir * (a.tick - b.tick) || a.p.localeCompare(b.p));
+  const pages = Math.max(1, Math.ceil(rows.length / J.size));
+  J.page = Math.min(J.page, pages - 1);
+  const view = rows.slice(J.page * J.size, (J.page + 1) * J.size);
+  $("j-count").textContent = `${rows.length} ${J.src === "sim" ? "trades simulés" : "décisions réelles"}`;
+  $("j-body").innerHTML = view.length ? view.map(r => `<tr>
+      <td class="n">${r.tick}</td><td style="white-space:nowrap">${fmtTs(r.ts)}</td>
+      <td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${COL[r.p]};margin-right:6px"></span>${r.p}</td>
+      <td><span class="tag ${r.units > 0 ? "buy" : r.units < 0 ? "sell" : ""}">${r.units > 0 ? "▲ Achat" : r.units < 0 ? "▼ Vente" : "■ Conserver"}</span></td>
+      <td class="n">${nf(0).format(Math.abs(r.units))}</td><td class="n">${nf(4).format(r.price)}</td>
+      <td class="n ${cls(r.S)}">${sgn(r.S, 2, "")}</td><td class="n">${sgn(r.order, 2, "")}</td>
+      <td class="reason">${esc(r.reason)}</td></tr>`).join("")
+    : `<tr><td colspan="9"><div class="empty" style="height:140px">${J.src === "real"
+        ? "Aucune décision réelle pour l'instant.<br>Le journal réel démarre quand <code>algorithm.py</code> écrira <code>docs/data/log.csv</code> à chaque exécution."
+        : "Aucun trade pour ce filtre."}</div></td></tr>`;
+  $("j-page").textContent = `Page ${J.page + 1} / ${pages}`;
+  $("j-prev").disabled = J.page === 0; $("j-next").disabled = J.page >= pages - 1;
+  const th = document.querySelector("#j-table th[aria-sort]");
+  th.setAttribute("aria-sort", J.dir < 0 ? "descending" : "ascending");
+  th.querySelector("span").textContent = J.dir < 0 ? "▼" : "▲";
+}
+document.querySelectorAll("[data-src]").forEach(b => b.addEventListener("click", () => {
+  J.src = b.dataset.src; J.page = 0;
+  document.querySelectorAll("[data-src]").forEach(x => x.setAttribute("aria-pressed", x === b)); renderJournal();
+}));
+$("j-prod").addEventListener("change", e => { J.prod = e.target.value; J.page = 0; renderJournal(); });
+$("j-side").addEventListener("change", e => { J.side = e.target.value; J.page = 0; renderJournal(); });
+$("j-prev").addEventListener("click", () => { J.page--; renderJournal(); });
+$("j-next").addEventListener("click", () => { J.page++; renderJournal(); });
+document.querySelector("[data-sort]").addEventListener("click", () => { J.dir *= -1; renderJournal(); });
+
+/* ------------------------------------------------------------ methode */
+function renderMethod() {
+  if (!D) return;
+  const B = D.backtest;
+  $("m-cycle").innerHTML = products.map(p => { const c = D.current[p].cycle; return `<tr><td>${p}</td><td class="n">${c.peak}</td><td class="n">${sgn(c.ac_peak, 2, "")}</td><td class="n">${sgn(c.ac_half, 2, "")}</td><td>${c.is_cycle ? `<span class="up">✓</span> cycle de ${c.peak} ticks` : `<span class="down">✕</span> tendance, pas de cycle`}</td></tr>`; }).join("");
+  $("m-rand").innerHTML = ["H1", "H2"].map(h => `<tr><td>${h === "H1" ? "1re" : "2e"} (ticks ${D.halves[h][0]}–${D.halves[h][1]})</td>${products.map(p => `<td class="n ${cls(B.random[h][p])}">${sgn(B.random[h][p])}</td>`).join("")}</tr>`).join("");
+  const famFR = { mean_reversion: "Retour à la moyenne", trend: "Tendance" };
+  $("m-methods").innerHTML = B.methods.map(m => `<tr class="${m.family === "mean_reversion" ? "retained" : ""}"><td>${esc(m.label)}</td><td>${famFR[m.family]}</td>${products.map(p => ["H1", "H2"].map(h => { const v = m[p][h].excess; return `<td class="n ${cls(v)}">${arrow(v)} ${sgn(v)}</td>`; }).join("")).join("")}</tr>`).join("");
+
+  const sw = B.sweep, dz = D.dead_zone;
+  const best = sw.find(r => Math.abs(r.dz - dz) < 1e-9), at67 = sw.reduce((a, r) => Math.abs(r.dz - .67) < Math.abs(a.dz - .67) ? r : a);
+  $("dz-help").innerHTML = `<b>Décision aidée :</b> régler la zone morte. Sans frais, chaque petit trade rapporte encore un peu : le gain baisse dès qu'on l'élargit. ` +
+    `À <b>${nf(2).format(dz)}</b> on garde ${nf(0).format(100 * best.H2.excess / sw[0].H2.excess)} % du gain de la 2e moitié avec ${nf(0).format(100 - 100 * best.H2.trades / sw[0].H2.trades)} % de trades en moins. ` +
+    `Vers 0,67 (idée de départ, mesuré à ${nf(2).format(at67.dz)}), il n'en reste que ${nf(0).format(100 * at67.H2.excess / sw[0].H2.excess)} %.`;
+  const lines = [{ x: dz, label: `retenue ${nf(2).format(dz)}`, color: COL.goldHi }, { x: 0.67, label: "0,67", color: COL.ink3 }];
+  chart("c-dz", { type: "line", data: { datasets: [
+    { label: "1re moitié", data: sw.map(r => ({ x: r.dz, y: r.H1.excess })), borderColor: COL.gold, backgroundColor: COL.gold, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6 },
+    { label: "2e moitié", data: sw.map(r => ({ x: r.dz, y: r.H2.excess })), borderColor: COL.blue, backgroundColor: COL.blue, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6 },
+  ] }, options: { responsive: true, maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
+    scales: { x: { ...linearX("Zone morte"), min: 0, max: .9, ticks: { stepSize: .1, callback: v => nf(1).format(v) } }, y: valueY(v => nf(0).format(v) + " €") },
+    plugins: { vlines: { lines }, tooltip: { callbacks: { title: it => `Zone morte ${nf(2).format(it[0].parsed.x)}`, label: it => { const r = sw[it.dataIndex][it.datasetIndex ? "H2" : "H1"]; return ` ${it.dataset.label} : ${sgn(r.excess)} (${sgn(r.pct, 1, " %")}), ${r.trades} trades`; } } } } } });
+  const T = D.endgame ? D.endgame.test : [];
+  const tot = r => products.reduce((s, p) => s + r.err0[p], 0);
+  if (T.length) chart("c-eg", { type: "bar", data: { labels: T.map(r => r.end_tick), datasets: [{ data: T.map(tot), backgroundColor: T.map(r => tot(r) >= 0 ? "rgba(76,187,127,.75)" : "rgba(236,107,95,.8)"), borderRadius: 4, borderSkipped: "start" }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      scales: { x: { grid: { display: false }, border: { display: false }, title: { display: true, text: "Tick de fin simulé", color: COL.ink3 } }, y: valueY(v => nf(0).format(v) + " €") },
+      plugins: { tooltip: { callbacks: { title: it => `Fin simulée au tick ${T[it[0].dataIndex].end_tick}`,
+        label: it => { const r = T[it.dataIndex]; return [` Total : ${sgn(tot(r))}`, ...products.map(p => `   ${p} : ${sgn(r.err0[p])}`),
+          ` Si 4 ticks de moins prévus : ${sgn(products.reduce((s, p) => s + r["err-4"][p], 0))}`, ` Si 4 ticks de plus prévus : ${sgn(products.reduce((s, p) => s + r.err4[p], 0))}`]; } } } } } });
+  chart("c-dzt", { type: "bar", data: { labels: sw.map(r => r.dz), datasets: [{ data: sw.map(r => r.H2.trades), backgroundColor: sw.map(r => Math.abs(r.dz - dz) < 1e-9 ? COL.gold : "rgba(74,138,212,.6)"), borderRadius: 4, borderSkipped: "start", borderColor: COL.surface, borderWidth: { left: 1, right: 1 } }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { callback: (v, i) => i % 2 ? "" : nf(1).format(sw[i].dz) }, title: { display: true, text: "Zone morte", color: COL.ink3 } }, y: valueY(v => v) },
+      plugins: { tooltip: { callbacks: { title: it => `Zone morte ${nf(2).format(sw[it[0].dataIndex].dz)}`, label: it => ` ${it.parsed.y} trades (2e moitié)` } } } } });
+}
+
+/* ------------------------------------------------------------ nav highlight */
+const links = [...document.querySelectorAll("nav.sections a")];
+const obs = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) links.forEach(a => a.setAttribute("aria-current", a.getAttribute("href") === "#" + e.target.id));
+}), { rootMargin: "-40% 0px -55% 0px" });
+document.querySelectorAll("section.block").forEach(s => obs.observe(s));
+
+document.querySelectorAll("[data-perf]").forEach(b => b.addEventListener("click", () => {
+  perfMode = b.dataset.perf;
+  document.querySelectorAll("[data-perf]").forEach(x => x.setAttribute("aria-pressed", x === b)); renderPerf();
+}));
+
+/* ------------------------------------------------------------ boot */
+function renderAll() {
+  renderTicker(); renderTiles();
+  if (!D) return;
+  renderEndgame(); renderPerf(); renderLeaderboard(); renderRisk(); renderTabs(); renderProduct(); renderJournal(); renderMethod();
+}
+setInterval(renderEndgame, 60000);
+renderAll();
+const getJSON = url => fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+Promise.allSettled(Object.entries(FEEDS).map(([k, u]) => getJSON(u).then(v => live[k] = v))).then(res => {
+  liveDone = true;
+  const ok = res.filter(r => r.status === "fulfilled").length;
+  $("live-dot").className = "dot " + (ok === res.length ? "live" : ok ? "" : "off");
+  const lp = lastPrices();
+  $("live-text").textContent = ok === res.length ? `En direct · tick ${lp.last.t}` : ok ? `Flux partiels (${ok}/${res.length})` : "Flux hors ligne — données du signal seules";
+  renderTicker(); renderTiles(); if (D) { renderEndgame(); renderPerf(); renderLeaderboard(); renderTabs(); }
+});
 </script>
 </body>
 </html>

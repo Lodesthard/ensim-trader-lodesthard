@@ -1,23 +1,48 @@
-import json, time
+"""Trader lodesthard -- writes decision.json and appends docs/data/log.csv.
+
+Pipeline for each product (see signals.py and endgame.py):
+1. raw index S in [-1, +1] = weighted mean of same-family methods;
+2. dead zone: |S| < DEAD_ZONE -> 0, else order = S / 2 (S = 0.8 -> 40 units);
+3. endgame rule in the last ticks before the end (1 Dec 2026, 15:00 Paris);
+4. stock/budget layer: never sell more than held, never spend below the reserve
+   (cash is shared by A, B, C, executed in that order like the organizer does).
+"""
+import csv
+import json
+import os
+import time
+
 import requests
 
-# Fill these in with the URLs the organizer gave you when they registered you:
-MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json"
-HOLDINGS_URL = "http://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json"
+from endgame import END_UTC, estimate_remaining_ticks, endgame_order, forecast
+from signals import DEAD_ZONE, PRODUCT_CONFIG, product_index, to_order
 
-MIN_MONEY_RESERVE = 50 # never let a buy signal spend below this much money
+MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json"
+HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/traders/lodesthard/holdings.json"
+LEADERBOARD_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/leaderboard.json"
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DECISION_PATH = os.path.join(ROOT, "decision.json")
+LOG_PATH = os.path.join(ROOT, "docs", "data", "log.csv")
+BASELINES = ["random_trader", "random_buyer", "random_seller"]
+
+MIN_MONEY_RESERVE = 50  # never let a buy signal spend below this much money
+
 
 def fetch_json(url):
     resp = requests.get(url, proxies={"http": None, "https": None}, timeout=(10, 20))
     resp.raise_for_status()
     return resp.json()
 
-def compute_signal(prices):
-    """
-    YOUR TASK -- see "Your task: design your trading signal" below for the
-    exact contract. Replace this body; as written it never trades.
-    """
-    return 0.0  # TODO: replace with your own signal logic
+
+def fr(x, d=2):
+    return f"{x:+.{d}f}".replace(".", ",").replace("-", "−")
+
+
+def compute_signal(prices, product):
+    """Raw index S in [-1, +1] for one product (0 if no method is configured)."""
+    return product_index(prices, product)
+
 
 def apply_budget_guard(raw_signal, money, price, reserve=MIN_MONEY_RESERVE):
     # A buy signal (positive) that would spend into the reserve gets scaled down,
@@ -33,23 +58,110 @@ def apply_budget_guard(raw_signal, money, price, reserve=MIN_MONEY_RESERVE):
         return raw_signal
     return round(max_affordable_units / 100, 3)
 
+
+def stock_guard(order, stock):
+    """Never ask to sell more than we hold."""
+    if order < 0 and 100 * -order > stock:
+        return -stock / 100
+    return order
+
+
+def signal_reason(product, s, order):
+    if not PRODUCT_CONFIG.get(product):
+        return "aucune méthode retenue (hausse lente, vendre ferait rater la hausse) → conserver"
+    if order == 0:
+        return f"S = {fr(s)} dans la zone morte (±{str(DEAD_ZONE).replace('.', ',')}) → conserver"
+    where = "en dessous" if s > 0 else "au-dessus"
+    side = "achat" if order > 0 else "vente"
+    return f"S = {fr(s)} : prix {where} de son niveau normal → {side} {abs(order) * 100:.0f} u."
+
+
+def decide(market, holdings, now=None):
+    """Return (decision dict, per-product details, endgame info)."""
+    products = market["products"]
+    history = market["history"]
+    ticks = [row["t"] for row in history]
+    remaining, gap_h, hours_left = estimate_remaining_ticks(
+        [row["timestamp"] for row in history], now=now)
+
+    money = holdings["money"]
+    decision, details = {}, {}
+    for p in products:
+        prices = [row[p] for row in history]
+        s = compute_signal(prices, p)
+        order = to_order(s, DEAD_ZONE)
+        reason = signal_reason(p, s, order)
+        fc = forecast(p, ticks, prices, remaining)
+        order, phase, end_reason = endgame_order(p, ticks, prices, order, remaining, fc)
+        if end_reason:
+            reason = end_reason
+        order = stock_guard(order, holdings["products"][p])
+        guarded = apply_budget_guard(order, money, prices[-1])
+        if guarded != order:
+            reason += " Quantité réduite (argent disponible)."
+        if guarded > 0:
+            money -= 100 * guarded * prices[-1]  # cash left for the next product
+        decision[p] = round(guarded, 3)
+        details[p] = {"S": s, "order": decision[p], "phase": phase, "reason": reason,
+                      "price": prices[-1], "forecast": fc}
+    info = {"remaining_ticks": remaining, "median_gap_h": gap_h, "hours_left": hours_left,
+            "end_utc": END_UTC.isoformat()}
+    return decision, details, info
+
+
+def append_log(market, holdings, leaderboard, details, info):
+    """One row per market tick (the workflow runs more often than the market)."""
+    products = market["products"]
+    last = market["history"][-1]
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    exists = os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0
+    if exists:
+        with open(LOG_PATH, encoding="utf-8", newline="") as f:
+            rows = list(csv.DictReader(f))
+        if rows and rows[-1]["tick"] == str(last["t"]):
+            return False
+    values = {e["id"]: e["total_value"] for e in (leaderboard or {}).get("leaderboard", [])}
+    total = holdings["money"] + sum(holdings["products"][p] * last[p] for p in products)
+    row = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tick": last["t"]}
+    row.update({f"price_{p}": last[p] for p in products})
+    row["money"] = round(holdings["money"], 2)
+    row.update({f"stock_{p}": round(holdings["products"][p], 2) for p in products})
+    row["total_value"] = round(total, 2)
+    row.update({b: values.get(b, "") for b in BASELINES})
+    row.update({f"S_{p}": round(details[p]["S"], 3) for p in products})
+    row.update({f"order_{p}": details[p]["order"] for p in products})
+    row["phase"] = "fin" if any(details[p]["phase"] == "fin" for p in products) else "normal"
+    row["remaining_ticks"] = round(info["remaining_ticks"], 1)
+    row.update({f"reason_{p}": details[p]["reason"] for p in products})
+    with open(LOG_PATH, "a", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if not exists:
+            w.writeheader()
+        w.writerow(row)
+    return True
+
+
 def main():
     market = fetch_json(MARKET_URL)
     holdings = fetch_json(HOLDINGS_URL)
-    products = market["products"]
-    history = market["history"]
+    try:
+        leaderboard = fetch_json(LEADERBOARD_URL)
+    except requests.RequestException:
+        leaderboard = None  # log still written, baselines left empty
 
-    decision = {}
-    for p in products:
-        prices = [row[p] for row in history]
-        raw = compute_signal(prices)
-        current_price = prices[-1] if prices else 0
-        decision[p] = round(apply_budget_guard(raw, holdings["money"], current_price), 3)
-
+    decision, details, info = decide(market, holdings)
     decision["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    with open("decision.json", "w") as f:
+    with open(DECISION_PATH, "w", encoding="utf-8") as f:
         json.dump(decision, f, indent=2)
+    logged = append_log(market, holdings, leaderboard, details, info)
+
     print(f"Wrote decision.json: {decision}")
+    print(f"~{info['remaining_ticks']:.1f} ticks left ({info['hours_left']:.0f} h, "
+          f"1 tick / {info['median_gap_h']:.1f} h)")
+    for p, d in details.items():
+        print(f"  {p}: {d['reason']}")
+    print("log.csv: new row" if logged else "log.csv: tick already logged")
+
 
 if __name__ == "__main__":
     main()
